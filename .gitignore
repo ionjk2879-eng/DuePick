@@ -1,14 +1,22 @@
 ## Gradle
-pinpoint/backend/.gradle/
-pinpoint/backend/build/
-!pinpoint/backend/gradle/wrapper/gradle-wrapper.jar
+.gradle/
+backend/.gradle/
+backend/build/
+build/
+!gradle/wrapper/gradle-wrapper.jar
 
 ## Node / Vite
-pinpoint/frontend/node_modules/
-pinpoint/frontend/dist/
-pinpoint/frontend/tsconfig.tsbuildinfo
+frontend/node_modules/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
+
+## Local data and environment
+backend/data/
+.env
+frontend/.env.local
 
 ## OS / editor
 .idea/
 .DS_Store
+*.iml
 *.log
