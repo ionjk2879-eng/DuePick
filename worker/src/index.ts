@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { analyzeProposal, type ProposalAnalysis } from './analyze';
-import { body, dealResponse, getUser, subscriptionResponse, type AppContext } from './helpers';
+import { body, dealResponse, expenseResponse, getUser, subscriptionResponse, type AppContext } from './helpers';
 import { createToken, hashPassword, randomToken, verifyPassword, verifyToken } from './security';
 import type { Env, UserRow, Variables } from './types';
 
@@ -136,8 +136,8 @@ app.post('/api/deals', async (c) => {
 app.patch('/api/deals/:id/status', async (c) => {
   const input = await body<{ status?: string }>(c as AppContext);
   if (!['REVIEW', 'CONFIRMED', 'IN_PROGRESS', 'COMPLETED', 'PAID'].includes(input.status ?? '')) return c.json({ message: '올바르지 않은 거래 상태입니다.' }, 400);
-  const result = await c.env.DB.prepare("UPDATE deals SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?")
-    .bind(input.status, Number(c.req.param('id')), getUser(c as AppContext).id).run();
+  const result = await c.env.DB.prepare("UPDATE deals SET status = ?, paid_at = CASE WHEN ? = 'PAID' THEN COALESCE(paid_at, CURRENT_TIMESTAMP) ELSE NULL END, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?")
+    .bind(input.status, input.status, Number(c.req.param('id')), getUser(c as AppContext).id).run();
   if (!result.meta.changes) return c.json({ message: '거래를 찾을 수 없습니다.' }, 404);
   const row = await c.env.DB.prepare('SELECT * FROM deals WHERE id = ?').bind(Number(c.req.param('id'))).first<Record<string, unknown>>();
   return c.json(dealResponse(row!));
@@ -147,6 +147,42 @@ app.delete('/api/deals/:id', async (c) => {
   const result = await c.env.DB.prepare('DELETE FROM deals WHERE id = ? AND user_id = ?').bind(Number(c.req.param('id')), getUser(c as AppContext).id).run();
   if (!result.meta.changes) return c.json({ message: '거래를 찾을 수 없습니다.' }, 404);
   return c.body(null, 204);
+});
+
+app.get('/api/expenses', async (c) => {
+  const rows = await c.env.DB.prepare(`SELECT e.*, d.client AS deal_client FROM expenses e LEFT JOIN deals d ON d.id = e.deal_id
+    WHERE e.user_id = ? ORDER BY e.expense_date DESC, e.id DESC`).bind(getUser(c as AppContext).id).all();
+  return c.json(rows.results.map((row) => expenseResponse(row as Record<string, unknown>)));
+});
+
+app.post('/api/expenses', async (c) => saveExpense(c as AppContext));
+app.put('/api/expenses/:id', async (c) => saveExpense(c as AppContext, Number(c.req.param('id'))));
+
+app.delete('/api/expenses/:id', async (c) => {
+  const result = await c.env.DB.prepare('DELETE FROM expenses WHERE id = ? AND user_id = ?')
+    .bind(Number(c.req.param('id')), getUser(c as AppContext).id).run();
+  if (!result.meta.changes) return c.json({ message: '비용 내역을 찾을 수 없습니다.' }, 404);
+  return c.body(null, 204);
+});
+
+app.get('/api/finance/summary', async (c) => {
+  const userId = getUser(c as AppContext).id;
+  const incomeRows = (await c.env.DB.prepare("SELECT amount, paid_at FROM deals WHERE user_id = ? AND status = 'PAID' AND amount IS NOT NULL").bind(userId).all()).results as Record<string, unknown>[];
+  const expenseRows = (await c.env.DB.prepare('SELECT amount, expense_date, usage_type, business_ratio, deduction_status FROM expenses WHERE user_id = ?').bind(userId).all()).results as Record<string, unknown>[];
+  const subscriptionRows = (await c.env.DB.prepare("SELECT amount, billing_cycle FROM subscriptions WHERE user_id = ? AND usage_type = 'BUSINESS'").bind(userId).all()).results as Record<string, unknown>[];
+  const realizedIncome = incomeRows.reduce((sum, row) => sum + Number(row.amount), 0);
+  const realizedBusinessExpense = expenseRows.filter((row) => row.usage_type === 'BUSINESS').reduce((sum, row) => sum + Number(row.amount) * Number(row.business_ratio) / 100, 0);
+  const deductionCandidate = expenseRows.filter((row) => row.deduction_status === 'CANDIDATE').reduce((sum, row) => sum + Number(row.amount) * Number(row.business_ratio) / 100, 0);
+  const monthlyRecurringExpense = subscriptionRows.reduce((sum, row) => sum + Number(row.amount) / (row.billing_cycle === 'YEARLY' ? 12 : 1), 0);
+  const now = new Date();
+  const months = Array.from({ length: 6 }, (_, offset) => {
+    const month = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 5 + offset, 1)).toISOString().slice(0, 7);
+    const income = incomeRows.filter((row) => String(row.paid_at ?? '').startsWith(month)).reduce((sum, row) => sum + Number(row.amount), 0);
+    const expense = expenseRows.filter((row) => String(row.expense_date).startsWith(month) && row.usage_type === 'BUSINESS').reduce((sum, row) => sum + Number(row.amount) * Number(row.business_ratio) / 100, 0);
+    return { month, income, expense, profit: income - expense };
+  });
+  return c.json({ realizedIncome, realizedBusinessExpense, netProfit: realizedIncome - realizedBusinessExpense,
+    deductionCandidate, monthlyRecurringExpense: Math.round(monthlyRecurringExpense), reviewCount: expenseRows.filter((row) => row.deduction_status === 'REVIEW').length, months });
 });
 
 app.get('/api/plans/me', async (c) => {
@@ -261,6 +297,17 @@ app.get('/api/reports/subscriptions/csv', async (c) => {
   return new Response(`\uFEFF${csv}`, { headers: { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="subscriptions-report.csv"' } });
 });
 
+app.get('/api/reports/finance/csv', async (c) => {
+  const userId = getUser(c as AppContext).id;
+  const incomes = (await c.env.DB.prepare("SELECT client, deal_type, amount, paid_at, payment_condition FROM deals WHERE user_id = ? AND status = 'PAID' ORDER BY paid_at DESC").bind(userId).all()).results as Record<string, unknown>[];
+  const expenses = (await c.env.DB.prepare(`SELECT e.*, d.client AS deal_client FROM expenses e LEFT JOIN deals d ON d.id = e.deal_id WHERE e.user_id = ? ORDER BY e.expense_date DESC`).bind(userId).all()).results as Record<string, unknown>[];
+  const escape = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+  const lines = ['구분,일자,거래처/항목,금액,계정과목,업무사용비율,공제검토,증빙,연결거래,메모'];
+  incomes.forEach((row) => lines.push(['수입', row.paid_at, row.client, row.amount, row.deal_type, '100', '', '', '', row.payment_condition].map(escape).join(',')));
+  expenses.forEach((row) => lines.push(['비용', row.expense_date, row.title, row.amount, row.category, row.business_ratio, row.deduction_status, row.evidence_type, row.deal_client, row.note].map(escape).join(',')));
+  return new Response(`\uFEFF${lines.join('\r\n')}`, { headers: { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="duepick-finance-report.csv"' } });
+});
+
 app.get('/api/reports/subscriptions/pdf', (c) => c.json({ message: 'PDF 보고서는 Cloudflare 전환 후 다시 제공할 예정입니다. CSV를 이용해주세요.' }, 501));
 
 async function saveSubscription(c: AppContext, id?: number) {
@@ -278,6 +325,42 @@ async function saveSubscription(c: AppContext, id?: number) {
   }
   const row = await c.env.DB.prepare('SELECT * FROM subscriptions WHERE id = ?').bind(id).first<Record<string, unknown>>();
   return c.json(subscriptionResponse(row!));
+}
+
+async function saveExpense(c: AppContext, id?: number) {
+  const input = await body<Record<string, unknown>>(c);
+  const title = String(input.title ?? '').trim();
+  const amount = Number(input.amount);
+  const expenseDate = String(input.expenseDate ?? '');
+  const category = String(input.category ?? '').trim();
+  const usageType = String(input.usageType ?? '');
+  const businessRatio = Number(input.businessRatio);
+  const evidenceType = String(input.evidenceType ?? 'NONE');
+  const deductionStatus = String(input.deductionStatus ?? 'REVIEW');
+  const evidenceUrl = String(input.evidenceUrl ?? '').trim();
+  const dealId = input.dealId === null || input.dealId === '' || input.dealId === undefined ? null : Number(input.dealId);
+  if (!title || !Number.isFinite(amount) || amount < 0 || !/^\d{4}-\d{2}-\d{2}$/.test(expenseDate) || !category) return c.json({ message: '비용명, 금액, 사용일, 계정과목을 확인해주세요.' }, 400);
+  if (!['BUSINESS', 'PERSONAL'].includes(usageType) || !Number.isInteger(businessRatio) || businessRatio < 0 || businessRatio > 100) return c.json({ message: '사용 구분 또는 업무 사용 비율이 올바르지 않습니다.' }, 400);
+  if (!['NONE', 'RECEIPT', 'TAX_INVOICE', 'CASH_RECEIPT', 'CARD_SLIP', 'OTHER'].includes(evidenceType) || !['REVIEW', 'CANDIDATE', 'EXCLUDED'].includes(deductionStatus)) return c.json({ message: '증빙 또는 공제 검토 상태가 올바르지 않습니다.' }, 400);
+  if (evidenceUrl && !/^https:\/\//i.test(evidenceUrl)) return c.json({ message: '증빙 링크는 https:// 주소를 입력해주세요.' }, 400);
+  if (dealId) {
+    const deal = await c.env.DB.prepare('SELECT id FROM deals WHERE id = ? AND user_id = ?').bind(dealId, getUser(c).id).first();
+    if (!deal) return c.json({ message: '연결할 거래를 찾을 수 없습니다.' }, 404);
+  }
+  const values = [dealId, title, amount, expenseDate, category, usageType, businessRatio,
+    String(input.paymentMethod ?? '').trim() || null, evidenceType, evidenceUrl || null,
+    deductionStatus, String(input.note ?? '').trim() || null];
+  if (id) {
+    const result = await c.env.DB.prepare(`UPDATE expenses SET deal_id = ?, title = ?, amount = ?, expense_date = ?, category = ?, usage_type = ?, business_ratio = ?, payment_method = ?, evidence_type = ?, evidence_url = ?, deduction_status = ?, note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`)
+      .bind(...values, id, getUser(c).id).run();
+    if (!result.meta.changes) return c.json({ message: '비용 내역을 찾을 수 없습니다.' }, 404);
+  } else {
+    const result = await c.env.DB.prepare(`INSERT INTO expenses (user_id, deal_id, title, amount, expense_date, category, usage_type, business_ratio, payment_method, evidence_type, evidence_url, deduction_status, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .bind(getUser(c).id, ...values).run();
+    id = Number(result.meta.last_row_id);
+  }
+  const row = await c.env.DB.prepare(`SELECT e.*, d.client AS deal_client FROM expenses e LEFT JOIN deals d ON d.id = e.deal_id WHERE e.id = ? AND e.user_id = ?`).bind(id, getUser(c).id).first<Record<string, unknown>>();
+  return c.json(expenseResponse(row!), id ? 200 : 201);
 }
 
 function stripHtml(html: string): string {

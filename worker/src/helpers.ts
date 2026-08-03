@@ -15,8 +15,16 @@ export function dealResponse(row: Record<string, unknown>) {
     publishDueDate: row.publish_due_date, revisionCount: row.revision_count,
     secondaryUsage: row.secondary_usage, paymentCondition: row.payment_condition,
     tasks: jsonArray(row.tasks), risks: jsonArray(row.risks), status: row.status,
-    rawText: row.raw_text, createdAt: row.created_at, updatedAt: row.updated_at,
+    rawText: row.raw_text, paidAt: row.paid_at, createdAt: row.created_at, updatedAt: row.updated_at,
   };
+}
+
+export function expenseResponse(row: Record<string, unknown>) {
+  return { id: row.id, dealId: row.deal_id, dealClient: row.deal_client, title: row.title,
+    amount: row.amount, expenseDate: row.expense_date, category: row.category,
+    usageType: row.usage_type, businessRatio: row.business_ratio, paymentMethod: row.payment_method,
+    evidenceType: row.evidence_type, evidenceUrl: row.evidence_url,
+    deductionStatus: row.deduction_status, note: row.note, createdAt: row.created_at };
 }
 
 export function subscriptionResponse(row: Record<string, unknown>) {

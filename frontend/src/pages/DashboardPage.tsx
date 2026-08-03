@@ -1,134 +1,109 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { isAxiosError } from 'axios';
+import { fetchDeals, type Deal } from '../api/deals';
+import { createExpense, deleteExpense, downloadFinanceCsv, fetchExpenses, fetchFinanceSummary, type DeductionStatus, type EvidenceType, type Expense, type FinanceSummary } from '../api/finance';
 import { createSubscription, deleteSubscription, fetchSubscriptions } from '../api/subscriptions';
-import { downloadCsvReport, downloadPdfReport } from '../api/reports';
 import { suggestCategory } from '../api/suggestion';
-import { fetchMyPlan, upgradeToPro, type Plan } from '../api/plan';
 import type { BillingCycle, Subscription, UsageType } from '../types';
-import ChartsSection from '../components/ChartsSection';
-import PlanCard from '../components/dashboard/PlanCard';
-import ReportPanel from '../components/dashboard/ReportPanel';
 import SubscriptionForm from '../components/dashboard/SubscriptionForm';
 import SubscriptionTable from '../components/dashboard/SubscriptionTable';
 
-function getErrorMessage(error: unknown, fallback: string): string {
+const today = new Date().toISOString().slice(0, 10);
+const evidenceLabels: Record<EvidenceType, string> = { NONE: '없음', RECEIPT: '영수증', TAX_INVOICE: '세금계산서', CASH_RECEIPT: '현금영수증', CARD_SLIP: '카드전표', OTHER: '기타' };
+const deductionLabels: Record<DeductionStatus, string> = { REVIEW: '검토 필요', CANDIDATE: '공제 후보', EXCLUDED: '공제 제외' };
+
+function errorText(error: unknown, fallback: string) {
   return isAxiosError(error) ? error.response?.data?.message ?? fallback : fallback;
 }
 
 export default function DashboardPage() {
+  const [summary, setSummary] = useState<FinanceSummary | null>(null);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [deals, setDeals] = useState<Deal[]>([]);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
-  const [serviceName, setServiceName] = useState('');
-  const [amount, setAmount] = useState('');
-  const [billingCycle, setBillingCycle] = useState<BillingCycle>('MONTHLY');
-  const [usageType, setUsageType] = useState<UsageType>('BUSINESS');
-  const [accountingCategory, setAccountingCategory] = useState('');
-  const [suggestionNote, setSuggestionNote] = useState<string | null>(null);
-  const [suggestionMatched, setSuggestionMatched] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [reportUsageType, setReportUsageType] = useState<UsageType | ''>('BUSINESS');
-  const [reportFrom, setReportFrom] = useState('');
-  const [reportTo, setReportTo] = useState('');
-  const [downloading, setDownloading] = useState<'csv' | 'pdf' | null>(null);
-  const [chartsRefreshKey, setChartsRefreshKey] = useState(0);
-  const [plan, setPlan] = useState<Plan | null>(null);
-  const [upgrading, setUpgrading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
-  const loadSubscriptions = async () => {
-    setSubscriptions(await fetchSubscriptions());
-    setChartsRefreshKey((key) => key + 1);
+  const [title, setTitle] = useState(''); const [expenseAmount, setExpenseAmount] = useState('');
+  const [expenseDate, setExpenseDate] = useState(today); const [category, setCategory] = useState('');
+  const [expenseUsage, setExpenseUsage] = useState<UsageType>('BUSINESS'); const [businessRatio, setBusinessRatio] = useState('100');
+  const [dealId, setDealId] = useState(''); const [paymentMethod, setPaymentMethod] = useState('');
+  const [evidenceType, setEvidenceType] = useState<EvidenceType>('NONE'); const [evidenceUrl, setEvidenceUrl] = useState('');
+  const [deductionStatus, setDeductionStatus] = useState<DeductionStatus>('REVIEW'); const [note, setNote] = useState('');
+
+  const [serviceName, setServiceName] = useState(''); const [subscriptionAmount, setSubscriptionAmount] = useState('');
+  const [billingCycle, setBillingCycle] = useState<BillingCycle>('MONTHLY'); const [subscriptionUsage, setSubscriptionUsage] = useState<UsageType>('BUSINESS');
+  const [accountingCategory, setAccountingCategory] = useState(''); const [suggestionNote, setSuggestionNote] = useState<string | null>(null);
+  const [suggestionMatched, setSuggestionMatched] = useState(false);
+
+  const reload = async () => {
+    const [nextSummary, nextExpenses, nextDeals, nextSubscriptions] = await Promise.all([fetchFinanceSummary(), fetchExpenses(), fetchDeals(), fetchSubscriptions()]);
+    setSummary(nextSummary); setExpenses(nextExpenses); setDeals(nextDeals); setSubscriptions(nextSubscriptions);
   };
 
+  useEffect(() => { reload().catch((caught) => setError(errorText(caught, '재무 정보를 불러오지 못했습니다.'))); }, []);
   useEffect(() => {
-    loadSubscriptions();
-    fetchMyPlan().then(setPlan).catch(() => setPlan(null));
-  }, []);
-
-  useEffect(() => {
-    if (!serviceName.trim()) {
-      setSuggestionNote(null);
-      setSuggestionMatched(false);
-      return;
-    }
-    const timer = setTimeout(async () => {
-      try {
-        const result = await suggestCategory(serviceName.trim());
-        setSuggestionMatched(result.matched);
-        setSuggestionNote(result.note);
-        if (result.matched) {
-          if (result.suggestedUsageType) setUsageType(result.suggestedUsageType);
-          setAccountingCategory(result.suggestedAccountingCategory ?? '');
-        }
-      } catch {
-        setSuggestionNote(null);
-      }
-    }, 500);
+    if (!serviceName.trim()) { setSuggestionNote(null); setSuggestionMatched(false); return; }
+    const timer = setTimeout(() => suggestCategory(serviceName.trim()).then((result) => {
+      setSuggestionMatched(result.matched); setSuggestionNote(result.note);
+      if (result.matched) { if (result.suggestedUsageType) setSubscriptionUsage(result.suggestedUsageType); setAccountingCategory(result.suggestedAccountingCategory ?? ''); }
+    }).catch(() => setSuggestionNote(null)), 500);
     return () => clearTimeout(timer);
   }, [serviceName]);
 
-  const handleUpgrade = async () => {
-    setErrorMessage(null);
-    setUpgrading(true);
+  const addExpense = async (event: FormEvent) => {
+    event.preventDefault(); setError(null); setSaving(true);
     try {
-      setPlan(await upgradeToPro());
-    } catch (error) {
-      setErrorMessage(getErrorMessage(error, 'PRO 업그레이드에 실패했습니다.'));
-    } finally {
-      setUpgrading(false);
-    }
+      await createExpense({ title, amount: Number(expenseAmount), expenseDate, category, usageType: expenseUsage,
+        businessRatio: expenseUsage === 'BUSINESS' ? Number(businessRatio) : 0, dealId: dealId ? Number(dealId) : null,
+        paymentMethod, evidenceType, evidenceUrl, deductionStatus, note });
+      setTitle(''); setExpenseAmount(''); setCategory(''); setDealId(''); setPaymentMethod(''); setEvidenceType('NONE'); setEvidenceUrl(''); setDeductionStatus('REVIEW'); setNote('');
+      await reload();
+    } catch (caught) { setError(errorText(caught, '비용 등록에 실패했습니다.')); } finally { setSaving(false); }
   };
 
-  const handleAdd = async (event: FormEvent) => {
-    event.preventDefault();
-    setErrorMessage(null);
+  const addSubscription = async (event: FormEvent) => {
+    event.preventDefault(); setError(null);
     try {
-      await createSubscription({ serviceName, amount: Number(amount), billingCycle, usageType, accountingCategory: accountingCategory || undefined });
-      setServiceName('');
-      setAmount('');
-      setAccountingCategory('');
-      setSuggestionNote(null);
-      await loadSubscriptions();
-    } catch (error) {
-      setErrorMessage(getErrorMessage(error, '구독 등록에 실패했습니다.'));
-    }
+      await createSubscription({ serviceName, amount: Number(subscriptionAmount), billingCycle, usageType: subscriptionUsage, accountingCategory: accountingCategory || undefined });
+      setServiceName(''); setSubscriptionAmount(''); setAccountingCategory(''); setSuggestionNote(null); await reload();
+    } catch (caught) { setError(errorText(caught, '구독 등록에 실패했습니다.')); }
   };
 
-  const handleDelete = async (id: number) => {
-    setErrorMessage(null);
-    try {
-      await deleteSubscription(id);
-      await loadSubscriptions();
-    } catch (error) {
-      setErrorMessage(getErrorMessage(error, '구독 삭제에 실패했습니다.'));
-    }
-  };
-
-  const handleDownload = async (format: 'csv' | 'pdf') => {
-    setDownloading(format);
-    try {
-      const params = { usageType: reportUsageType || undefined, from: reportFrom || undefined, to: reportTo || undefined };
-      await (format === 'csv' ? downloadCsvReport(params) : downloadPdfReport(params));
-    } finally {
-      setDownloading(null);
-    }
-  };
-
-  const businessTotal = subscriptions.filter((item) => item.usageType === 'BUSINESS').reduce((sum, item) => sum + item.amount, 0);
+  const removeExpense = async (id: number) => { if (!confirm('이 비용 내역을 삭제할까요?')) return; await deleteExpense(id); await reload(); };
+  const removeSubscription = async (id: number) => { if (!confirm('이 구독을 삭제할까요?')) return; await deleteSubscription(id); await reload(); };
+  const exportCsv = async () => { setDownloading(true); try { await downloadFinanceCsv(); } finally { setDownloading(false); } };
 
   return (
     <>
-      <header className="page-header"><div><p className="eyebrow">COST WORKSPACE</p><h1 className="page-title">비용 관리</h1><p className="page-description">업무에 쓰는 구독 비용을 정리하고 월 지출 흐름을 확인하세요.</p></div></header>
-      <section className="grid-3" style={{ marginBottom: 20 }}><div className="card metric-card"><div className="metric-label">업무용 구독</div><div className="metric-value">{businessTotal.toLocaleString()}원</div><div className="metric-note">현재 등록 금액 합계</div></div><div className="card metric-card"><div className="metric-label">등록 서비스</div><div className="metric-value">{subscriptions.length}개</div><div className="metric-note">업무용·개인용 포함</div></div>{plan && <PlanCard plan={plan} upgrading={upgrading} onUpgrade={handleUpgrade} />}</section>
-      {errorMessage && <div className="alert alert-error">{errorMessage}</div>}
-      <ChartsSection key={chartsRefreshKey} />
-      <section className="card card-body" style={{ marginTop: 20 }}><div className="card-header" style={{ padding: 0, marginBottom: 18 }}><div><h2 className="card-title">구독 추가</h2><p className="card-copy">서비스명에 따라 일반적인 비용 분류를 추천합니다.</p></div></div><SubscriptionForm
-        serviceName={serviceName} amount={amount} billingCycle={billingCycle} usageType={usageType}
-        accountingCategory={accountingCategory} suggestionNote={suggestionNote} suggestionMatched={suggestionMatched}
-        onServiceNameChange={setServiceName} onAmountChange={setAmount} onBillingCycleChange={setBillingCycle}
-        onUsageTypeChange={setUsageType} onAccountingCategoryChange={setAccountingCategory} onSubmit={handleAdd}
-      /></section>
-      <ReportPanel usageType={reportUsageType} from={reportFrom} to={reportTo} downloading={downloading}
-        onUsageTypeChange={setReportUsageType} onFromChange={setReportFrom} onToChange={setReportTo} onDownload={handleDownload} />
-      <section className="card" style={{ marginTop: 20 }}><div className="card-header"><div><h2 className="card-title">구독 목록</h2><p className="card-copy">현재 등록된 반복 비용입니다.</p></div></div><div className="card-body"><SubscriptionTable subscriptions={subscriptions} onDelete={handleDelete} /></div></section>
+      <header className="page-header"><div><p className="eyebrow">FINANCE WORKSPACE</p><h1 className="page-title">재무 관리</h1><p className="page-description">입금된 외주·협찬 수입과 업무 비용을 연결해 실제 손익과 증빙 준비 상태를 확인하세요.</p></div><button className="btn btn-secondary" onClick={exportCsv} disabled={downloading}>{downloading ? '생성 중…' : '통합 CSV 내보내기'}</button></header>
+      <div className="alert alert-info">공제 상태는 신고 준비를 위한 분류입니다. 실제 공제 가능 여부는 증빙과 업무 관련성을 기준으로 최종 확인하세요.</div>
+      {error && <div className="alert alert-error">{error}</div>}
+
+      <section className="finance-metrics">
+        <div className="card metric-card"><div className="metric-label">입금 완료 수입</div><div className="metric-value">{(summary?.realizedIncome ?? 0).toLocaleString()}원</div><div className="metric-note">거래 관리의 입금 완료 기준</div></div>
+        <div className="card metric-card"><div className="metric-label">업무 비용</div><div className="metric-value">{(summary?.realizedBusinessExpense ?? 0).toLocaleString()}원</div><div className="metric-note">업무 사용 비율 반영</div></div>
+        <div className="card metric-card metric-highlight"><div className="metric-label">현재 순수익</div><div className="metric-value">{(summary?.netProfit ?? 0).toLocaleString()}원</div><div className="metric-note">입금 수입 − 등록 비용</div></div>
+        <div className="card metric-card"><div className="metric-label">공제 후보</div><div className="metric-value">{(summary?.deductionCandidate ?? 0).toLocaleString()}원</div><div className="metric-note">검토 대기 {summary?.reviewCount ?? 0}건 · 월 구독 {(summary?.monthlyRecurringExpense ?? 0).toLocaleString()}원</div></div>
+      </section>
+
+      <section className="card" style={{ marginTop: 20 }}><div className="card-header"><div><h2 className="card-title">최근 6개월 손익</h2><p className="card-copy">입금일과 비용 사용일을 기준으로 집계합니다.</p></div></div><div className="card-body"><div className="table-wrap"><table className="data-table"><thead><tr><th>월</th><th>수입</th><th>업무 비용</th><th>순수익</th></tr></thead><tbody>{summary?.months.map((month) => <tr key={month.month}><td>{month.month}</td><td>{month.income.toLocaleString()}원</td><td>{month.expense.toLocaleString()}원</td><td className={month.profit < 0 ? 'amount-negative' : 'amount-positive'}>{month.profit.toLocaleString()}원</td></tr>)}</tbody></table></div></div></section>
+
+      <section className="card card-body" style={{ marginTop: 20 }}><div className="card-header flush-header"><div><h2 className="card-title">일회성 비용 등록</h2><p className="card-copy">장비·교통·외주·광고비 등을 거래와 연결하고 증빙 상태를 기록합니다.</p></div></div>
+        <form className="stack" onSubmit={addExpense}>
+          <div className="form-grid"><label className="field"><span className="field-label">비용명</span><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="예: 촬영 소품" required /></label><label className="field"><span className="field-label">금액</span><input type="number" min="0" value={expenseAmount} onChange={(e) => setExpenseAmount(e.target.value)} required /></label></div>
+          <div className="expense-form-grid"><label className="field"><span className="field-label">사용일</span><input type="date" value={expenseDate} onChange={(e) => setExpenseDate(e.target.value)} required /></label><label className="field"><span className="field-label">계정과목</span><input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="예: 소모품비" required /></label><label className="field"><span className="field-label">사용 구분</span><select value={expenseUsage} onChange={(e) => setExpenseUsage(e.target.value as UsageType)}><option value="BUSINESS">업무용</option><option value="PERSONAL">개인용</option></select></label><label className="field"><span className="field-label">업무 사용 비율</span><input type="number" min="0" max="100" value={businessRatio} disabled={expenseUsage === 'PERSONAL'} onChange={(e) => setBusinessRatio(e.target.value)} /></label></div>
+          <div className="form-grid"><label className="field"><span className="field-label">관련 거래</span><select value={dealId} onChange={(e) => setDealId(e.target.value)}><option value="">공통 비용 / 연결 안 함</option>{deals.map((deal) => <option key={deal.id} value={deal.id}>{deal.client ?? '거래처 미정'} · {(deal.amount ?? 0).toLocaleString()}원</option>)}</select></label><label className="field"><span className="field-label">결제수단</span><input value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} placeholder="예: 사업용 카드" /></label></div>
+          <div className="expense-form-grid"><label className="field"><span className="field-label">증빙</span><select value={evidenceType} onChange={(e) => setEvidenceType(e.target.value as EvidenceType)}>{Object.entries(evidenceLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="field expense-url"><span className="field-label">증빙 파일 링크</span><input type="url" value={evidenceUrl} onChange={(e) => setEvidenceUrl(e.target.value)} placeholder="Drive·Dropbox 등의 공유 링크" /></label><label className="field"><span className="field-label">공제 검토</span><select value={deductionStatus} onChange={(e) => setDeductionStatus(e.target.value as DeductionStatus)}>{Object.entries(deductionLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label></div>
+          <label className="field"><span className="field-label">메모</span><input value={note} onChange={(e) => setNote(e.target.value)} placeholder="업무 관련성과 사용 목적을 기록하세요" /></label><div className="action-row"><button className="btn btn-primary" disabled={saving}>{saving ? '저장 중…' : '비용 저장'}</button></div>
+        </form>
+      </section>
+
+      <section className="card" style={{ marginTop: 20 }}><div className="card-header"><div><h2 className="card-title">비용 장부</h2><p className="card-copy">업무 사용 비율이 손익과 공제 후보 금액에 반영됩니다.</p></div></div><div className="card-body"><div className="table-wrap"><table className="data-table"><thead><tr><th>사용일</th><th>항목</th><th>금액</th><th>분류</th><th>연결 거래</th><th>증빙</th><th>공제 검토</th><th></th></tr></thead><tbody>{expenses.map((expense) => <tr key={expense.id}><td>{expense.expenseDate}</td><td>{expense.title}</td><td>{expense.amount.toLocaleString()}원 <small>({expense.businessRatio}%)</small></td><td>{expense.category}</td><td>{expense.dealClient ?? '공통 비용'}</td><td>{expense.evidenceUrl ? <a href={expense.evidenceUrl} target="_blank" rel="noreferrer">{evidenceLabels[expense.evidenceType]}</a> : evidenceLabels[expense.evidenceType]}</td><td><span className={`badge badge-${expense.deductionStatus.toLowerCase()}`}>{deductionLabels[expense.deductionStatus]}</span></td><td><button className="btn btn-danger btn-sm" onClick={() => removeExpense(expense.id)}>삭제</button></td></tr>)}</tbody></table>{!expenses.length && <p className="helper table-empty">아직 등록된 일반 비용이 없습니다.</p>}</div></div></section>
+
+      <section className="card card-body" style={{ marginTop: 20 }}><div className="card-header flush-header"><div><h2 className="card-title">반복 구독 비용</h2><p className="card-copy">기존 핀포인트 구독 데이터입니다. 실제 결제 장부와 구분해 월 예상 비용으로 표시합니다.</p></div></div><SubscriptionForm serviceName={serviceName} amount={subscriptionAmount} billingCycle={billingCycle} usageType={subscriptionUsage} accountingCategory={accountingCategory} suggestionNote={suggestionNote} suggestionMatched={suggestionMatched} onServiceNameChange={setServiceName} onAmountChange={setSubscriptionAmount} onBillingCycleChange={setBillingCycle} onUsageTypeChange={setSubscriptionUsage} onAccountingCategoryChange={setAccountingCategory} onSubmit={addSubscription} /></section>
+      <section className="card" style={{ marginTop: 20 }}><div className="card-header"><div><h2 className="card-title">구독 목록</h2><p className="card-copy">업무용과 개인용 반복 비용을 함께 관리합니다.</p></div></div><div className="card-body"><SubscriptionTable subscriptions={subscriptions} onDelete={removeSubscription} /></div></section>
     </>
   );
 }

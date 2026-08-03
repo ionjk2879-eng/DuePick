@@ -33,16 +33,18 @@ Cloudflare Workers + D1 기반으로 전환했으며, 직접 붙여넣기와 사
 - GitHub `main` push 기반 Cloudflare Workers 자동 배포
 - 공통 사이드바·헤더·디자인 토큰 기반의 반응형 웹 UI
 - Duepick 파비콘, 웹 앱 매니페스트, 카카오톡·SNS 공유용 Open Graph 카드
+- 입금 완료 거래와 일반 비용을 연결하는 재무 장부
+- 업무 사용 비율·증빙 링크·공제 검토 상태 및 최근 6개월 손익
+- 수입·비용 통합 신고 준비용 CSV
 
 ## 다음 작업
 
-1. Cloudflare D1을 생성하고 첫 운영 배포 및 Resend 웹훅 등록을 완료한다.
-2. 실패한 인바운드 이벤트의 상태 기록과 관리자 재시도를 추가한다.
-3. 규칙 기반 분석기를 교체 또는 보완할 LLM Structured Output 어댑터를 추가한다.
-4. Notion Public OAuth/API로 확인된 거래를 등록한다.
-5. Google Calendar에 초안·게시·입금 예정 일정을 만든다.
-6. Google Sheets 내보내기와 PDF/OCR 첨부 분석을 추가한다.
-7. 기존 구독 비용을 거래별 실제 수익 계산과 연결한다.
+1. 실패한 인바운드 이벤트의 상태 기록과 관리자 재시도를 추가한다.
+2. 규칙 기반 분석기를 교체 또는 보완할 LLM Structured Output 어댑터를 추가한다.
+3. Notion Public OAuth/API로 확인된 거래를 등록한다.
+4. Google Calendar에 초안·게시·입금 예정 일정을 만든다.
+5. Google Sheets 내보내기와 PDF/OCR 첨부 분석을 추가한다.
+6. Cloudflare R2를 연결해 증빙 파일 자체 업로드를 지원한다.
 
 ## 다음 작업의 완료 조건
 

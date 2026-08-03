@@ -6,10 +6,10 @@ const navigation = [
   { to: '/inbox', icon: '✉', label: '받은 제안' },
   { to: '/deals', icon: '▦', label: '거래 관리' },
   { to: '/proposals', icon: '✦', label: '직접 분석' },
-  { to: '/dashboard', icon: '◫', label: '비용 관리' },
+  { to: '/dashboard', icon: '◫', label: '재무 관리' },
 ];
 
-const pageNames: Record<string, string> = { '/inbox': '받은 제안', '/deals': '거래 관리', '/proposals': '직접 분석', '/dashboard': '비용 관리' };
+const pageNames: Record<string, string> = { '/inbox': '받은 제안', '/deals': '거래 관리', '/proposals': '직접 분석', '/dashboard': '재무 관리' };
 
 export default function AppShell() {
   const { nickname, logout } = useAuth();

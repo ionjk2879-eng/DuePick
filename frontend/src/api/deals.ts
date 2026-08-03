@@ -17,6 +17,7 @@ export interface Deal {
   tasks: string[];
   risks: string[];
   status: DealStatus;
+  paidAt: string | null;
   rawText: string;
   createdAt: string;
   updatedAt: string;
