@@ -85,6 +85,8 @@ Worker 단독 개발 시 프론트의 `frontend/.env.local`에 `VITE_API_BASE_UR
 
 운영 D1 생성 후 `worker/wrangler.jsonc`의 `database_id`를 실제 ID로 교체합니다. 비밀값은 저장소에 커밋하지 않습니다.
 
+`main` 브랜치에 push하면 Cloudflare Workers Builds가 `worker` 디렉터리를 기준으로 프론트엔드와 Worker를 자동 배포합니다.
+
 ## 분석 미리보기 API
 
 JWT 인증이 필요합니다.

@@ -29,6 +29,7 @@ Cloudflare Workers + D1 기반으로 전환했으며, 직접 붙여넣기와 사
 - Receiving API 본문 조회, HTML 정규화, 분석 초안 저장
 - 받은 메일 분석 초안을 중복 없이 거래로 확정하는 사용자 확인 기능
 - Cloudflare 정적 자산과 Worker API 단일 배포 구성
+- GitHub `main` push 기반 Cloudflare Workers 자동 배포
 
 ## 다음 작업
 
@@ -59,6 +60,7 @@ Resend 단계는 다음 조건을 만족하면 완료로 본다.
 - 기존 Pinpoint를 별도 협찬 메일 서비스와 분리하지 않고 Duepick으로 확장한다.
 - 1인 개발자의 초기 운영비를 최소화하기 위해 운영 런타임을 Cloudflare Workers + D1으로 전환한다.
 - 기존 Spring Boot 코드는 전환 검증과 데이터 참고가 끝날 때까지 `backend/`에 보존한다.
+- 운영 배포는 GitHub `main`과 연결된 Cloudflare Workers Builds를 사용한다.
 - 기존 구독 관리는 비용 영역으로 유지한다.
 - Gmail 전체 읽기 OAuth는 MVP 범위에서 제외한다.
 - 첫 입력 방식은 직접 붙여넣기이며, 다음 입력 방식은 전용 전달 주소다.
