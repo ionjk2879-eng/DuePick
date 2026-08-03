@@ -1,3 +1,3 @@
-rootProject.name = "pinpoint"
+rootProject.name = "duepick"
 
 include("backend")

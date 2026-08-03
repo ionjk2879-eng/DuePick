@@ -25,7 +25,9 @@ export default function SignupPage() {
 
   return (
     <div style={{ maxWidth: 360, margin: '80px auto', fontFamily: 'sans-serif' }}>
-      <h1>회원가입</h1>
+      <p style={{ marginBottom: 4, fontWeight: 700 }}>Duepick</p>
+      <h1 style={{ marginTop: 0 }}>회원가입</h1>
+      <p style={{ color: '#555' }}>제안부터 입금까지, 놓치지 않게</p>
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <input type="text" placeholder="닉네임" value={nickname} onChange={(e) => setNickname(e.target.value)} required />
         <input type="email" placeholder="이메일" value={email} onChange={(e) => setEmail(e.target.value)} required />

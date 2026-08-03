@@ -24,7 +24,9 @@ export default function LoginPage() {
 
   return (
     <div style={{ maxWidth: 360, margin: '80px auto', fontFamily: 'sans-serif' }}>
-      <h1>로그인</h1>
+      <p style={{ marginBottom: 4, fontWeight: 700 }}>Duepick</p>
+      <h1 style={{ marginTop: 0 }}>로그인</h1>
+      <p style={{ color: '#555' }}>제안부터 입금까지, 놓치지 않게</p>
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <input type="email" placeholder="이메일" value={email} onChange={(e) => setEmail(e.target.value)} required />
         <input type="password" placeholder="비밀번호" value={password} onChange={(e) => setPassword(e.target.value)} required />

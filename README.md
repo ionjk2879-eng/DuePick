@@ -1,6 +1,8 @@
-# Pinpoint
+# Duepick
 
 프리랜서·크리에이터·1인 사업자의 **제안 → 계약 → 작업 → 입금 → 비용 → 실제 수익**을 한곳에서 관리하는 프로젝트입니다.
+
+> 제안부터 입금까지, 놓치지 않게.
 
 ## 제품 구조
 
@@ -52,7 +54,7 @@ cd backend
 ./gradlew bootRun
 ```
 
-루트에서 `./gradlew bootRun`으로 실행할 수도 있습니다. Windows PowerShell에서는 `./gradlew.bat bootRun`을 사용합니다. 기본 API 주소는 `http://localhost:8080`이며 데이터는 `backend/data/pinpoint.mv.db`에 유지됩니다. PostgreSQL이나 Docker는 기본 실행에 필요하지 않습니다.
+루트에서 `./gradlew bootRun`으로 실행할 수도 있습니다. Windows PowerShell에서는 `./gradlew.bat bootRun`을 사용합니다. 기본 API 주소는 `http://localhost:8080`이며 데이터는 `backend/data/pinpoint.mv.db`에 유지됩니다. 기존 로컬 데이터 호환을 위해 DB 파일명은 이전 프로젝트 식별자를 유지합니다. PostgreSQL이나 Docker는 기본 실행에 필요하지 않습니다.
 
 프론트엔드:
 
