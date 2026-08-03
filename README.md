@@ -10,7 +10,7 @@
 - 지출: 업무용/개인용 구독 비용, 월 환산 금액, 계정과목과 리포트 관리
 - 통합 흐름: 제안 분석 결과를 사용자가 확인한 뒤 저장하고, 이후 작업 일정·입금 상태·비용을 연결
 
-현재 단계는 메일 원문을 직접 붙여넣는 안전한 MVP입니다. Gmail 전체 읽기 권한은 사용하지 않습니다.
+현재 단계는 메일 원문 직접 붙여넣기와 사용자별 Resend 전달 주소를 제공하는 안전한 MVP입니다. Gmail 전체 읽기 권한은 사용하지 않습니다.
 
 ## 1단계 기능
 
@@ -39,24 +39,20 @@
 
 ## 실행
 
-요구 사항: Java 21, Node.js 18 이상
+요구 사항: Node.js 20 이상. 운영 런타임은 Cloudflare Workers, 데이터베이스는 D1입니다. 기존 Spring Boot 코드는 전환 검증과 데이터 참고를 위해 `backend/`에 보존되어 있습니다.
 
-전체 프로젝트 검증은 루트에서 한 번에 실행할 수 있습니다.
-
-```bash
-./gradlew build
-```
-
-백엔드:
+최초 한 번:
 
 ```bash
-cd backend
-./gradlew bootRun
+cd frontend
+npm install
+cd ../worker
+npm install
+Copy-Item .dev.vars.example .dev.vars
+npm run db:local
 ```
 
-루트에서 `./gradlew bootRun`으로 실행할 수도 있습니다. Windows PowerShell에서는 `./gradlew.bat bootRun`을 사용합니다. 기본 API 주소는 `http://localhost:8080`이며 데이터는 `backend/data/pinpoint.mv.db`에 유지됩니다. 기존 로컬 데이터 호환을 위해 DB 파일명은 이전 프로젝트 식별자를 유지합니다. PostgreSQL이나 Docker는 기본 실행에 필요하지 않습니다.
-
-프론트엔드:
+프론트엔드 개발 서버:
 
 ```bash
 cd frontend
@@ -64,23 +60,30 @@ npm install
 npm run dev
 ```
 
-기본 화면은 `http://localhost:5173`입니다. 회원가입 또는 로그인 후 대시보드의 **외주 제안 분석** 링크를 이용합니다.
+Worker API와 정적 화면을 함께 실행:
+
+```bash
+cd worker
+npm run build:frontend
+npm run dev
+```
+
+Worker 단독 개발 시 프론트의 `frontend/.env.local`에 `VITE_API_BASE_URL=http://localhost:8787/api`를 설정합니다.
 
 ## 환경변수
 
-예시는 [.env.example](.env.example)에 있습니다. Spring Boot 환경변수는 실행 셸 또는 IDE 실행 구성에 설정하고, 프론트 API 주소를 바꿀 때는 `frontend/.env.local`에 `VITE_API_BASE_URL`을 설정합니다.
+예시는 [worker/.dev.vars.example](worker/.dev.vars.example)에 있습니다. 로컬 비밀값은 Git에서 제외되는 `worker/.dev.vars`에 넣고, 운영 비밀값은 `wrangler secret put`으로 등록합니다.
 
 | 변수 | 기본값 | 설명 |
 | --- | --- | --- |
-| `SERVER_PORT` | `8080` | 백엔드 포트 |
-| `DB_URL` | `jdbc:h2:file:./data/pinpoint;AUTO_SERVER=TRUE` | JDBC 주소 |
-| `DB_DRIVER` | `org.h2.Driver` | JDBC 드라이버 |
-| `DB_USERNAME` | `sa` | DB 사용자 |
-| `DB_PASSWORD` | 빈 값 | DB 비밀번호 |
-| `JWT_SECRET` | 개발용 기본 문자열 | 운영 환경에서는 32자 이상의 임의 값 필수 |
-| `VITE_API_BASE_URL` | `http://localhost:8080/api` | 프론트의 API 기본 주소 |
+| `JWT_SECRET` | 없음 | 운영 환경에서는 32자 이상의 임의 값 필수 |
+| `RESEND_API_KEY` | 없음 | 수신 메일 본문 조회용 API 키 |
+| `RESEND_WEBHOOK_SECRET` | 없음 | Resend 웹훅 서명 검증 키 |
+| `RESEND_RECEIVING_DOMAIN` | `zenuuxdoeu.resend.app` | 사용자별 전달 주소의 수신 도메인 |
+| `APP_ORIGIN` | `http://localhost:5173` | 허용할 프론트엔드 Origin, 쉼표로 복수 지정 가능 |
+| `VITE_API_BASE_URL` | `/api` | 프론트의 API 기본 주소 |
 
-기존 PostgreSQL을 사용하려면 `DB_URL`, `DB_DRIVER`, `DB_USERNAME`, `DB_PASSWORD`만 PostgreSQL 값으로 덮어쓰면 됩니다. `docker-compose.yml`은 선택 사항입니다.
+운영 D1 생성 후 `worker/wrangler.jsonc`의 `database_id`를 실제 ID로 교체합니다. 비밀값은 저장소에 커밋하지 않습니다.
 
 ## 분석 미리보기 API
 
@@ -100,9 +103,10 @@ Content-Type: application/json
 
 외부 서비스는 핵심 도메인과 분리해 다음 순서로 연결합니다.
 
-1. 사용자별 전달 주소와 Resend Inbound 웹훅으로 선택한 메일만 수신
-2. 사용자 확인 후 구조화 결과를 거래로 저장
-3. Notion Public OAuth/API로 거래 데이터베이스 등록
+1. 거래 저장 전 받은 메일의 분석 초안을 수정하는 기능
+2. 실패한 인바운드 처리의 상태 기록과 재시도 기능
+3. LLM Structured Output 분석 어댑터
+4. Notion Public OAuth/API로 거래 데이터베이스 등록
 4. Google Calendar에 초안·게시·입금 일정을 생성
 5. Google Sheets 내보내기와 첨부 PDF/OCR 분석 추가
 
@@ -111,10 +115,9 @@ Content-Type: application/json
 ## 검증
 
 ```bash
-cd backend
-./gradlew test build
-
-cd ../frontend
+cd worker
 npm ci
-npm run build
+npm run typecheck
+npm run db:local
+npm run build:frontend
 ```

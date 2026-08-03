@@ -5,6 +5,7 @@ import SignupPage from './pages/SignupPage';
 import DashboardPage from './pages/DashboardPage';
 import ProposalPage from './pages/ProposalPage';
 import DealsPage from './pages/DealsPage';
+import InboxPage from './pages/InboxPage';
 import type { ReactNode } from 'react';
 
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -36,6 +37,7 @@ export default function App() {
             }
           />
           <Route path="/deals" element={<RequireAuth><DealsPage /></RequireAuth>} />
+          <Route path="/inbox" element={<RequireAuth><InboxPage /></RequireAuth>} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </BrowserRouter>

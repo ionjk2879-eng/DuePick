@@ -14,6 +14,9 @@ frontend/tsconfig.tsbuildinfo
 backend/data/
 .env
 frontend/.env.local
+worker/.dev.vars
+worker/node_modules/
+worker/.wrangler/
 
 ## OS / editor
 .idea/

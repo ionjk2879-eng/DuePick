@@ -1,0 +1,24 @@
+import { apiClient } from './client';
+import type { ProposalAnalysis } from './proposal';
+
+export interface InboxMessage {
+  id: number;
+  sender: string | null;
+  recipient: string;
+  subject: string | null;
+  analysis: ProposalAnalysis;
+  status: 'REVIEW' | 'SAVED' | 'FAILED';
+  createdAt: string;
+}
+
+export async function fetchInboxAddress(): Promise<string> {
+  return (await apiClient.get<{ address: string }>('/inbox')).data.address;
+}
+
+export async function fetchInboxMessages(): Promise<InboxMessage[]> {
+  return (await apiClient.get<InboxMessage[]>('/inbox/messages')).data;
+}
+
+export async function saveInboxMessage(id: number): Promise<void> {
+  await apiClient.post(`/inbox/messages/${id}/save`);
+}

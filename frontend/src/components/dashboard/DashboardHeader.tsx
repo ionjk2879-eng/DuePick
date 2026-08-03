@@ -13,6 +13,7 @@ export default function DashboardHeader({ nickname, onLogout }: DashboardHeaderP
         <h1 style={{ margin: 0 }}>{nickname}님의 업무 대시보드</h1>
       </div>
       <nav style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+        <Link to="/inbox">메일로 제안 받기</Link>
         <Link to="/deals">협찬·외주 거래</Link>
         <Link to="/proposals">외주 제안 분석</Link>
         <button onClick={onLogout}>로그아웃</button>

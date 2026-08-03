@@ -4,18 +4,18 @@
 
 ## 현재 단계
 
-**2단계 완료, 3단계 진입 전**
+**Cloudflare 전환 및 3단계 기본 구현 완료**
 
-현재는 협찬·외주 메일 원문을 직접 붙여넣어 분석하고, 사용자가 결과를 확인한 뒤 거래로 저장하여 상태를 관리하는 로컬 MVP다. Resend, 외부 LLM, Notion, Google API는 아직 연결하지 않았다.
+Cloudflare Workers + D1 기반으로 전환했으며, 직접 붙여넣기와 사용자별 Resend 전달 주소를 지원한다. 인바운드 메일은 분석 초안으로만 저장되고 자동으로 거래 확정되지 않는다. 실제 Resend 웹훅 등록과 운영 배포는 아직 필요하다.
 
 ## 현재 구현 상태
 
-- Spring Boot 4 / Java 21 백엔드
+- Cloudflare Workers / TypeScript / Hono 백엔드
 - React 18 / TypeScript / Vite 프론트엔드
 - JWT 회원가입·로그인
-- H2 로컬 파일 DB와 선택적 PostgreSQL 설정
+- Cloudflare D1 데이터베이스와 마이그레이션
 - 구독 비용 CRUD, 분류 추천, 요약 차트
-- CSV/PDF 리포트
+- CSV 리포트(PDF 리포트는 Workers 전환 중 일시 중단)
 - 무료/프로 플랜 및 모의 결제 골격
 - 협찬·외주 원문 붙여넣기 화면
 - 규칙 기반 제안 분석 미리보기 API
@@ -24,12 +24,18 @@
 - 확인한 분석 결과를 사용자별 거래로 저장
 - 거래 목록, 삭제, 금액 합계
 - `확인 필요 → 확정 → 진행 중 → 작업 완료 → 입금 완료` 상태 관리
+- 사용자별 예측하기 어려운 Resend 전달 주소
+- Resend 웹훅 원문 서명 검증과 중복 이벤트 방지
+- Receiving API 본문 조회, HTML 정규화, 분석 초안 저장
+- 받은 메일 분석 초안을 중복 없이 거래로 확정하는 사용자 확인 기능
+- Cloudflare 정적 자산과 Worker API 단일 배포 구성
 
 ## 다음 작업
 
-1. 사용자별 전달 주소와 Resend Inbound 웹훅을 설계·구현한다.
-2. 인바운드 메일을 기존 분석 미리보기 흐름에 연결하되 사용자 확인 단계를 유지한다.
-3. 규칙 기반 분석기를 교체 또는 보완할 LLM Structured Output 어댑터를 추가한다.
+1. Cloudflare D1을 생성하고 첫 운영 배포 및 Resend 웹훅 등록을 완료한다.
+2. 받은 메일의 분석 초안을 거래 저장 전에 수정하는 UI를 추가한다.
+3. 실패한 인바운드 이벤트의 상태 기록과 관리자 재시도를 추가한다.
+4. 규칙 기반 분석기를 교체 또는 보완할 LLM Structured Output 어댑터를 추가한다.
 4. Notion Public OAuth/API로 확인된 거래를 등록한다.
 5. Google Calendar에 초안·게시·입금 예정 일정을 만든다.
 6. Google Sheets 내보내기와 PDF/OCR 첨부 분석을 추가한다.
@@ -51,7 +57,8 @@ Resend 단계는 다음 조건을 만족하면 완료로 본다.
 
 - 정식 제품명은 `Duepick(듀픽)`이며 슬로건은 `제안부터 입금까지, 놓치지 않게`로 한다.
 - 기존 Pinpoint를 별도 협찬 메일 서비스와 분리하지 않고 Duepick으로 확장한다.
-- 기존 로컬 데이터 호환을 위해 DB 파일·Docker 볼륨과 Java 패키지의 `pinpoint` 식별자는 당분간 유지한다.
+- 1인 개발자의 초기 운영비를 최소화하기 위해 운영 런타임을 Cloudflare Workers + D1으로 전환한다.
+- 기존 Spring Boot 코드는 전환 검증과 데이터 참고가 끝날 때까지 `backend/`에 보존한다.
 - 기존 구독 관리는 비용 영역으로 유지한다.
 - Gmail 전체 읽기 OAuth는 MVP 범위에서 제외한다.
 - 첫 입력 방식은 직접 붙여넣기이며, 다음 입력 방식은 전용 전달 주소다.
@@ -60,18 +67,19 @@ Resend 단계는 다음 조건을 만족하면 완료로 본다.
 
 ## 검증 명령
 
-루트에서 전체 빌드:
+Worker 타입 검사와 로컬 D1 마이그레이션:
 
 ```powershell
-./gradlew.bat build
+Set-Location worker
+npm run typecheck
+npm run db:local
 ```
 
 프론트엔드만 검증:
 
 ```powershell
-Set-Location frontend
-npm ci
-npm run build
+Set-Location worker
+npm run build:frontend
 ```
 
 ## 상태 갱신 메모

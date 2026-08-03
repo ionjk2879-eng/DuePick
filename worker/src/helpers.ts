@@ -1,0 +1,31 @@
+import type { Context } from 'hono';
+import type { Env, UserRow, Variables } from './types';
+
+export type AppContext = Context<{ Bindings: Env; Variables: Variables }>;
+
+export function jsonArray(value: unknown): string[] {
+  if (typeof value !== 'string') return [];
+  try { const parsed = JSON.parse(value); return Array.isArray(parsed) ? parsed : []; } catch { return []; }
+}
+
+export function dealResponse(row: Record<string, unknown>) {
+  return {
+    id: row.id, client: row.client, dealType: row.deal_type, amount: row.amount,
+    deliverables: jsonArray(row.deliverables), draftDueDate: row.draft_due_date,
+    publishDueDate: row.publish_due_date, revisionCount: row.revision_count,
+    secondaryUsage: row.secondary_usage, paymentCondition: row.payment_condition,
+    tasks: jsonArray(row.tasks), risks: jsonArray(row.risks), status: row.status,
+    rawText: row.raw_text, createdAt: row.created_at, updatedAt: row.updated_at,
+  };
+}
+
+export function subscriptionResponse(row: Record<string, unknown>) {
+  return { id: row.id, serviceName: row.service_name, amount: row.amount, billingCycle: row.billing_cycle,
+    usageType: row.usage_type, accountingCategory: row.accounting_category, createdAt: row.created_at };
+}
+
+export function getUser(c: AppContext): UserRow { return c.get('user'); }
+
+export async function body<T>(c: AppContext): Promise<T> {
+  try { return await c.req.json<T>(); } catch { throw new Error('요청 본문이 올바른 JSON이 아닙니다.'); }
+}

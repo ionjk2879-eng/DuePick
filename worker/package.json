@@ -1,0 +1,21 @@
+{
+  "name": "duepick-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "build:frontend": "npm --prefix ../frontend ci && npm --prefix ../frontend run build",
+    "deploy": "npm run build:frontend && wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "db:local": "wrangler d1 migrations apply duepick --local",
+    "db:remote": "wrangler d1 migrations apply duepick --remote"
+  },
+  "dependencies": {
+    "hono": "^4.9.2"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260801.1",
+    "typescript": "^5.9.2",
+    "wrangler": "^4.118.0"
+  }
+}

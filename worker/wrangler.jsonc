@@ -1,0 +1,24 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "duepick-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-03",
+  "observability": { "enabled": true },
+  "assets": {
+    "directory": "../frontend/dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "vars": {
+    "APP_ORIGIN": "http://localhost:5173",
+    "RESEND_RECEIVING_DOMAIN": "zenuuxdoeu.resend.app"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "duepick",
+      "database_id": "f1a8bfb8-b597-4cb2-975f-65a0d52133db",
+      "migrations_dir": "migrations"
+    }
+  ]
+}
