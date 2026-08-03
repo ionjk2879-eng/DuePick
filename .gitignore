@@ -9,5 +9,6 @@ pinpoint/frontend/dist/
 pinpoint/frontend/tsconfig.tsbuildinfo
 
 ## OS / editor
+.idea/
 .DS_Store
 *.log
