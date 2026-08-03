@@ -105,8 +105,8 @@ Content-Type: application/json
 
 외부 서비스는 핵심 도메인과 분리해 다음 순서로 연결합니다.
 
-1. 거래 저장 전 받은 메일의 분석 초안을 수정하는 기능
-2. 실패한 인바운드 처리의 상태 기록과 재시도 기능
+1. 실패한 인바운드 처리의 상태 기록과 재시도 기능
+2. 분석 초안에서 작업물·체크리스트·위험 항목까지 편집하는 기능
 3. LLM Structured Output 분석 어댑터
 4. Notion Public OAuth/API로 거래 데이터베이스 등록
 4. Google Calendar에 초안·게시·입금 일정을 생성

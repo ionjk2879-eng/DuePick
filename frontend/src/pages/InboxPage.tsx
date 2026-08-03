@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { fetchInboxAddress, fetchInboxMessages, saveInboxMessage, type InboxMessage } from '../api/inbox';
+import { fetchInboxAddress, fetchInboxMessages, saveInboxMessage, updateInboxAnalysis, type InboxMessage } from '../api/inbox';
+import type { ProposalAnalysis } from '../api/proposal';
 
 export default function InboxPage() {
   const [address, setAddress] = useState('');
@@ -8,6 +9,8 @@ export default function InboxPage() {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [savingId, setSavingId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [draft, setDraft] = useState<ProposalAnalysis | null>(null);
 
   const load = async () => {
     try {
@@ -40,6 +43,31 @@ export default function InboxPage() {
     }
   };
 
+  const startEditing = (message: InboxMessage) => {
+    setEditingId(message.id);
+    setDraft({ ...message.analysis });
+  };
+
+  const updateDraft = <K extends keyof ProposalAnalysis>(key: K, value: ProposalAnalysis[K]) => {
+    setDraft((current) => current ? { ...current, [key]: value } : current);
+  };
+
+  const saveDraft = async () => {
+    if (editingId === null || !draft) return;
+    setSavingId(editingId);
+    setError(null);
+    try {
+      const updated = await updateInboxAnalysis(editingId, draft);
+      setMessages((items) => items.map((item) => item.id === editingId ? { ...item, analysis: updated } : item));
+      setEditingId(null);
+      setDraft(null);
+    } catch {
+      setError('분석 초안 수정에 실패했습니다.');
+    } finally {
+      setSavingId(null);
+    }
+  };
+
   return (
     <main style={{ maxWidth: 820, margin: '40px auto', padding: '0 20px', fontFamily: 'sans-serif', color: '#172033' }}>
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -65,11 +93,33 @@ export default function InboxPage() {
               <strong>{message.subject || '제목 없음'}</strong><span>{message.status === 'SAVED' ? '거래 저장됨' : '확인 필요'}</span>
             </div>
             <p style={{ color: '#667085', fontSize: 14 }}>보낸 사람: {message.sender || '-'}</p>
-            <p>거래처: {message.analysis.client || '확인 필요'} · 금액: {message.analysis.amount?.toLocaleString() ?? '확인 필요'}원</p>
-            {!!message.analysis.risks.length && <p style={{ color: '#b54708' }}>확인 항목: {message.analysis.risks.join(' · ')}</p>}
-            <button onClick={() => void saveAsDeal(message.id)} disabled={message.status === 'SAVED' || savingId === message.id}>
-              {message.status === 'SAVED' ? '거래 저장됨' : savingId === message.id ? '저장 중…' : '이 분석으로 거래 저장'}
-            </button>
+            {editingId === message.id && draft ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10, marginBottom: 14 }}>
+                <label>거래처<input value={draft.client ?? ''} onChange={(event) => updateDraft('client', event.target.value || null)} /></label>
+                <label>거래 유형<input value={draft.dealType ?? ''} onChange={(event) => updateDraft('dealType', event.target.value || null)} /></label>
+                <label>금액<input type="number" min="0" value={draft.amount ?? ''} onChange={(event) => updateDraft('amount', event.target.value === '' ? null : Number(event.target.value))} /></label>
+                <label>수정 횟수<input type="number" min="0" value={draft.revisionCount ?? ''} onChange={(event) => updateDraft('revisionCount', event.target.value === '' ? null : Number(event.target.value))} /></label>
+                <label>초안 기한<input type="date" value={draft.draftDueDate ?? ''} onChange={(event) => updateDraft('draftDueDate', event.target.value || null)} /></label>
+                <label>게시 기한<input type="date" value={draft.publishDueDate ?? ''} onChange={(event) => updateDraft('publishDueDate', event.target.value || null)} /></label>
+                <label>2차 사용<input value={draft.secondaryUsage ?? ''} onChange={(event) => updateDraft('secondaryUsage', event.target.value || null)} /></label>
+                <label>지급 조건<input value={draft.paymentCondition ?? ''} onChange={(event) => updateDraft('paymentCondition', event.target.value || null)} /></label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={() => void saveDraft()} disabled={savingId === message.id}>수정 저장</button>
+                  <button onClick={() => { setEditingId(null); setDraft(null); }}>취소</button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <p>거래처: {message.analysis.client || '확인 필요'} · 금액: {message.analysis.amount?.toLocaleString() ?? '확인 필요'}원</p>
+                {!!message.analysis.risks.length && <p style={{ color: '#b54708' }}>확인 항목: {message.analysis.risks.join(' · ')}</p>}
+              </>
+            )}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => startEditing(message)} disabled={message.status === 'SAVED' || editingId === message.id}>분석 수정</button>
+              <button onClick={() => void saveAsDeal(message.id)} disabled={message.status === 'SAVED' || savingId === message.id || editingId === message.id}>
+                {message.status === 'SAVED' ? '거래 저장됨' : savingId === message.id ? '저장 중…' : '이 분석으로 거래 저장'}
+              </button>
+            </div>
           </article>
         ))}
       </div>

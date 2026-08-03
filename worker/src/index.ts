@@ -171,6 +171,36 @@ app.get('/api/inbox/messages', async (c) => {
     subject: row.subject, analysis: JSON.parse(String(row.analysis)), status: row.status, createdAt: row.created_at })));
 });
 
+app.patch('/api/inbox/messages/:id/analysis', async (c) => {
+  const user = getUser(c as AppContext);
+  const message = await c.env.DB.prepare('SELECT analysis, status FROM inbound_emails WHERE id = ? AND user_id = ?')
+    .bind(Number(c.req.param('id')), user.id).first<{ analysis: string; status: string }>();
+  if (!message) return c.json({ message: '수신 메일을 찾을 수 없습니다.' }, 404);
+  if (message.status === 'SAVED') return c.json({ message: '이미 거래로 저장된 메일은 수정할 수 없습니다.' }, 409);
+  const input = await body<Partial<ProposalAnalysis>>(c as AppContext);
+  const current = JSON.parse(message.analysis) as ProposalAnalysis;
+  const nullableText = (value: unknown) => typeof value === 'string' && value.trim() ? value.trim() : null;
+  const nullableNumber = (value: unknown) => value === null || value === '' ? null : Number(value);
+  const updated: ProposalAnalysis = {
+    ...current,
+    client: nullableText(input.client),
+    dealType: nullableText(input.dealType),
+    amount: nullableNumber(input.amount),
+    draftDueDate: nullableText(input.draftDueDate),
+    publishDueDate: nullableText(input.publishDueDate),
+    revisionCount: nullableNumber(input.revisionCount),
+    secondaryUsage: nullableText(input.secondaryUsage),
+    paymentCondition: nullableText(input.paymentCondition),
+  };
+  if ((updated.amount !== null && (!Number.isFinite(updated.amount) || updated.amount < 0)) ||
+      (updated.revisionCount !== null && (!Number.isInteger(updated.revisionCount) || updated.revisionCount < 0))) {
+    return c.json({ message: '금액 또는 수정 횟수가 올바르지 않습니다.' }, 400);
+  }
+  await c.env.DB.prepare('UPDATE inbound_emails SET analysis = ? WHERE id = ? AND user_id = ?')
+    .bind(JSON.stringify(updated), Number(c.req.param('id')), user.id).run();
+  return c.json(updated);
+});
+
 app.post('/api/inbox/messages/:id/save', async (c) => {
   const user = getUser(c as AppContext);
   const message = await c.env.DB.prepare(

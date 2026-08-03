@@ -28,15 +28,15 @@ Cloudflare Workers + D1 기반으로 전환했으며, 직접 붙여넣기와 사
 - Resend 웹훅 원문 서명 검증과 중복 이벤트 방지
 - Receiving API 본문 조회, HTML 정규화, 분석 초안 저장
 - 받은 메일 분석 초안을 중복 없이 거래로 확정하는 사용자 확인 기능
+- 거래 저장 전 받은 메일의 핵심 분석 필드를 수정하는 기능
 - Cloudflare 정적 자산과 Worker API 단일 배포 구성
 - GitHub `main` push 기반 Cloudflare Workers 자동 배포
 
 ## 다음 작업
 
 1. Cloudflare D1을 생성하고 첫 운영 배포 및 Resend 웹훅 등록을 완료한다.
-2. 받은 메일의 분석 초안을 거래 저장 전에 수정하는 UI를 추가한다.
-3. 실패한 인바운드 이벤트의 상태 기록과 관리자 재시도를 추가한다.
-4. 규칙 기반 분석기를 교체 또는 보완할 LLM Structured Output 어댑터를 추가한다.
+2. 실패한 인바운드 이벤트의 상태 기록과 관리자 재시도를 추가한다.
+3. 규칙 기반 분석기를 교체 또는 보완할 LLM Structured Output 어댑터를 추가한다.
 4. Notion Public OAuth/API로 확인된 거래를 등록한다.
 5. Google Calendar에 초안·게시·입금 예정 일정을 만든다.
 6. Google Sheets 내보내기와 PDF/OCR 첨부 분석을 추가한다.

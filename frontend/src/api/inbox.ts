@@ -22,3 +22,7 @@ export async function fetchInboxMessages(): Promise<InboxMessage[]> {
 export async function saveInboxMessage(id: number): Promise<void> {
   await apiClient.post(`/inbox/messages/${id}/save`);
 }
+
+export async function updateInboxAnalysis(id: number, analysis: ProposalAnalysis): Promise<ProposalAnalysis> {
+  return (await apiClient.patch<ProposalAnalysis>(`/inbox/messages/${id}/analysis`, analysis)).data;
+}
