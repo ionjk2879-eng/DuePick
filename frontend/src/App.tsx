@@ -6,6 +6,7 @@ import DashboardPage from './pages/DashboardPage';
 import ProposalPage from './pages/ProposalPage';
 import DealsPage from './pages/DealsPage';
 import InboxPage from './pages/InboxPage';
+import AppShell from './components/layout/AppShell';
 import type { ReactNode } from 'react';
 
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -20,25 +21,13 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
-          <Route
-            path="/dashboard"
-            element={
-              <RequireAuth>
-                <DashboardPage />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/proposals"
-            element={
-              <RequireAuth>
-                <ProposalPage />
-              </RequireAuth>
-            }
-          />
-          <Route path="/deals" element={<RequireAuth><DealsPage /></RequireAuth>} />
-          <Route path="/inbox" element={<RequireAuth><InboxPage /></RequireAuth>} />
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          <Route element={<RequireAuth><AppShell /></RequireAuth>}>
+            <Route path="/inbox" element={<InboxPage />} />
+            <Route path="/deals" element={<DealsPage />} />
+            <Route path="/proposals" element={<ProposalPage />} />
+            <Route path="/dashboard" element={<DashboardPage />} />
+          </Route>
+          <Route path="*" element={<Navigate to="/inbox" replace />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>

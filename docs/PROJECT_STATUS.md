@@ -31,6 +31,8 @@ Cloudflare Workers + D1 기반으로 전환했으며, 직접 붙여넣기와 사
 - 거래 저장 전 받은 메일의 핵심 분석 필드를 수정하는 기능
 - Cloudflare 정적 자산과 Worker API 단일 배포 구성
 - GitHub `main` push 기반 Cloudflare Workers 자동 배포
+- 공통 사이드바·헤더·디자인 토큰 기반의 반응형 웹 UI
+- Duepick 파비콘, 웹 앱 매니페스트, 카카오톡·SNS 공유용 Open Graph 카드
 
 ## 다음 작업
 

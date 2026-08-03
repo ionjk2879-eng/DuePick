@@ -24,20 +24,20 @@ export default function SignupPage() {
   };
 
   return (
-    <div style={{ maxWidth: 360, margin: '80px auto', fontFamily: 'sans-serif' }}>
-      <p style={{ marginBottom: 4, fontWeight: 700 }}>Duepick</p>
-      <h1 style={{ marginTop: 0 }}>회원가입</h1>
-      <p style={{ color: '#555' }}>제안부터 입금까지, 놓치지 않게</p>
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <input type="text" placeholder="닉네임" value={nickname} onChange={(e) => setNickname(e.target.value)} required />
-        <input type="email" placeholder="이메일" value={email} onChange={(e) => setEmail(e.target.value)} required />
-        <input type="password" placeholder="비밀번호 (8자 이상)" value={password} onChange={(e) => setPassword(e.target.value)} required />
-        {error && <p style={{ color: 'crimson', fontSize: 14 }}>{error}</p>}
-        <button type="submit">가입하기</button>
-      </form>
-      <p style={{ marginTop: 16, fontSize: 14 }}>
-        이미 계정이 있으신가요? <Link to="/login">로그인</Link>
-      </p>
+    <div className="auth-layout">
+      <section className="auth-panel"><div className="auth-card">
+        <div className="brand"><span className="brand-mark" />Duepick</div>
+        <h1 className="auth-title">내 업무 흐름 만들기</h1><p className="auth-copy">무료로 시작하고, 중요한 제안과 입금 일정을 한곳에서 관리하세요.</p>
+        <form onSubmit={handleSubmit} className="auth-form">
+          <label className="field"><span className="field-label">닉네임</span><input type="text" placeholder="어떻게 불러드릴까요?" value={nickname} onChange={(e) => setNickname(e.target.value)} required /></label>
+          <label className="field"><span className="field-label">이메일</span><input type="email" placeholder="name@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required /></label>
+          <label className="field"><span className="field-label">비밀번호</span><input type="password" placeholder="8자 이상 입력하세요" value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} required /></label>
+          {error && <div className="alert alert-error">{error}</div>}
+          <button className="btn btn-primary" type="submit">무료로 시작하기</button>
+        </form>
+        <p className="auth-switch">이미 계정이 있으신가요? <Link to="/login">로그인</Link></p>
+      </div></section>
+      <aside className="auth-visual"><p className="eyebrow">MADE FOR SOLO BUSINESS</p><h2>제안은 놓치지 않고,<br />일은 더 선명하게.</h2><p>메일 전달 주소 하나로 거래 조건을 정리하고, 확인한 내용만 안전하게 업무로 전환합니다.</p><div className="auth-steps"><span className="auth-step">Gmail 권한 불필요</span><span className="auth-step">사용자 확인 후 저장</span><span className="auth-step">무료로 시작</span></div></aside>
     </div>
   );
 }

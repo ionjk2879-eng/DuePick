@@ -11,16 +11,16 @@ interface SubscriptionFormProps {
 
 export default function SubscriptionForm(props: SubscriptionFormProps) {
   return (
-    <form onSubmit={props.onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 8, margin: '20px 0' }}>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <input placeholder="서비스명 (예: Canva)" value={props.serviceName} onChange={(e) => props.onServiceNameChange(e.target.value)} required />
-        <input type="number" placeholder="금액" value={props.amount} onChange={(e) => props.onAmountChange(e.target.value)} required />
-        <select value={props.billingCycle} onChange={(e) => props.onBillingCycleChange(e.target.value as BillingCycle)}><option value="MONTHLY">월간</option><option value="YEARLY">연간</option></select>
-        <select value={props.usageType} onChange={(e) => props.onUsageTypeChange(e.target.value as UsageType)}><option value="BUSINESS">업무용</option><option value="PERSONAL">개인용</option></select>
-        <input placeholder="참고 계정과목 (예: 지급수수료)" value={props.accountingCategory} onChange={(e) => props.onAccountingCategoryChange(e.target.value)} />
-        <button type="submit">추가</button>
+    <form onSubmit={props.onSubmit} className="stack">
+      <div className="form-grid-wide">
+        <label className="field"><span className="field-label">서비스</span><input placeholder="예: Canva" value={props.serviceName} onChange={(e) => props.onServiceNameChange(e.target.value)} required /></label>
+        <label className="field"><span className="field-label">금액</span><input type="number" min="0" placeholder="0" value={props.amount} onChange={(e) => props.onAmountChange(e.target.value)} required /></label>
+        <label className="field"><span className="field-label">결제 주기</span><select value={props.billingCycle} onChange={(e) => props.onBillingCycleChange(e.target.value as BillingCycle)}><option value="MONTHLY">월간</option><option value="YEARLY">연간</option></select></label>
+        <label className="field"><span className="field-label">사용 구분</span><select value={props.usageType} onChange={(e) => props.onUsageTypeChange(e.target.value as UsageType)}><option value="BUSINESS">업무용</option><option value="PERSONAL">개인용</option></select></label>
+        <label className="field"><span className="field-label">계정과목</span><input placeholder="예: 지급수수료" value={props.accountingCategory} onChange={(e) => props.onAccountingCategoryChange(e.target.value)} /></label>
+        <button className="btn btn-primary" type="submit">추가</button>
       </div>
-      {props.suggestionNote && <p style={{ fontSize: 13, color: props.suggestionMatched ? '#2563eb' : '#999', margin: 0 }}>{props.suggestionMatched ? '💡 추천: ' : ''}{props.suggestionNote}</p>}
+      {props.suggestionNote && <p className={`helper${props.suggestionMatched ? ' helper-accent' : ''}`}>{props.suggestionMatched ? '✦ 추천: ' : ''}{props.suggestionNote}</p>}
     </form>
   );
 }

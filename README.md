@@ -4,6 +4,8 @@
 
 > 제안부터 입금까지, 놓치지 않게.
 
+운영 사이트: [duepick-api.ionjk2879.workers.dev](https://duepick-api.ionjk2879.workers.dev)
+
 ## 제품 구조
 
 - 수입·업무: 협찬/외주 메일에서 거래처, 금액, 작업물, 납기, 수정 횟수, 게시 및 지급 조건을 구조화
@@ -113,6 +115,10 @@ Content-Type: application/json
 5. Google Sheets 내보내기와 첨부 PDF/OCR 분석 추가
 
 외부 API 키가 없어도 현재 애플리케이션과 빌드는 정상 동작합니다.
+
+## 공유 미리보기
+
+파비콘과 Open Graph 대표 이미지는 `frontend/public`에서 관리합니다. 카카오톡 공유 정보가 이전 값으로 보이면 [카카오 디벨로퍼스 도구](https://developers.kakao.com/tool)에서 **카카오톡 URL 메타정보 관리 → 메타정보 초기화**를 실행합니다.
 
 ## 검증
 

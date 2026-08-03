@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { fetchInboxAddress, fetchInboxMessages, saveInboxMessage, updateInboxAnalysis, type InboxMessage } from '../api/inbox';
 import type { ProposalAnalysis } from '../api/proposal';
 
@@ -69,60 +68,48 @@ export default function InboxPage() {
   };
 
   return (
-    <main style={{ maxWidth: 820, margin: '40px auto', padding: '0 20px', fontFamily: 'sans-serif', color: '#172033' }}>
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div><strong>Duepick</strong><h1 style={{ marginTop: 6 }}>메일로 제안 받기</h1></div>
-        <nav style={{ display: 'flex', gap: 12 }}><Link to="/deals">거래 목록</Link><Link to="/dashboard">대시보드</Link></nav>
-      </header>
+    <>
+      <header className="page-header"><div><p className="eyebrow">INBOUND MAIL</p><h1 className="page-title">받은 제안</h1><p className="page-description">협찬·외주 메일을 전용 주소로 전달하면 확인 가능한 거래 초안으로 정리합니다.</p></div><div className="page-actions"><button className="btn btn-secondary" onClick={() => void load()}>↻ 새로고침</button></div></header>
 
-      <section style={{ padding: 20, border: '1px solid #d8dee9', borderRadius: 12, marginBottom: 24 }}>
-        <p style={{ marginTop: 0 }}>협찬·외주 메일을 아래 주소로 전달하세요. 분석 결과는 자동 확정되지 않습니다.</p>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <input value={address} readOnly style={{ flex: 1, padding: 10 }} aria-label="내 Duepick 전달 주소" />
-          <button onClick={copyAddress} disabled={!address}>{copied ? '복사됨' : '주소 복사'}</button>
-          <button onClick={() => void load()}>새로고침</button>
+      <section className="card card-body" style={{ marginBottom: 22 }}>
+        <div className="card-header" style={{ padding: 0, marginBottom: 14 }}><div><h2 className="card-title">내 전용 전달 주소</h2><p className="card-copy">필요한 메일만 이 주소로 전달하세요. 받은편지함 전체 권한은 사용하지 않습니다.</p></div><span className="badge badge-confirmed">활성</span></div>
+        <div className="address-box">
+          <input className="address-input" value={address} readOnly aria-label="내 Duepick 전달 주소" />
+          <button className="btn btn-primary" onClick={copyAddress} disabled={!address}>{copied ? '✓ 복사됨' : '주소 복사'}</button>
         </div>
+        <div className="alert alert-info" style={{ marginBottom: 0 }}>메일이 도착하면 거래로 자동 확정하지 않고 아래의 확인 대기 목록에 저장합니다.</div>
       </section>
 
-      {error && <p style={{ color: '#b42318' }}>{error}</p>}
-      {!messages.length && <p style={{ padding: 24, textAlign: 'center', border: '1px dashed #ccd3df', borderRadius: 10 }}>아직 도착한 메일이 없습니다.</p>}
-      <div style={{ display: 'grid', gap: 14 }}>
+      {error && <div className="alert alert-error">{error}</div>}
+      <div className="page-header" style={{ margin: '28px 0 14px' }}><div><h2 className="card-title">확인 대기</h2><p className="card-copy">{messages.filter((message) => message.status !== 'SAVED').length}개의 제안을 확인해주세요.</p></div></div>
+      {!messages.length && <div className="empty-state"><div className="empty-icon">✉</div><h3>아직 도착한 메일이 없어요</h3><p>전용 주소로 테스트 메일을 전달하면 이곳에 분석 초안이 나타납니다.</p></div>}
+      <div className="stack">
         {messages.map((message) => (
-          <article key={message.id} style={{ padding: 18, border: '1px solid #d8dee9', borderRadius: 10 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-              <strong>{message.subject || '제목 없음'}</strong><span>{message.status === 'SAVED' ? '거래 저장됨' : '확인 필요'}</span>
-            </div>
-            <p style={{ color: '#667085', fontSize: 14 }}>보낸 사람: {message.sender || '-'}</p>
+          <article key={message.id} className="card message-card"><div className="message-summary">
+            <div className="message-top"><div><div className="message-subject">{message.subject || '제목 없음'}</div><p className="message-sender">{message.sender || '발신자 정보 없음'} · {new Date(message.createdAt).toLocaleDateString('ko-KR')}</p></div><span className={`badge ${message.status === 'SAVED' ? 'badge-saved' : 'badge-review'}`}>{message.status === 'SAVED' ? '거래 저장됨' : '확인 필요'}</span></div>
             {editingId === message.id && draft ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10, marginBottom: 14 }}>
-                <label>거래처<input value={draft.client ?? ''} onChange={(event) => updateDraft('client', event.target.value || null)} /></label>
-                <label>거래 유형<input value={draft.dealType ?? ''} onChange={(event) => updateDraft('dealType', event.target.value || null)} /></label>
-                <label>금액<input type="number" min="0" value={draft.amount ?? ''} onChange={(event) => updateDraft('amount', event.target.value === '' ? null : Number(event.target.value))} /></label>
-                <label>수정 횟수<input type="number" min="0" value={draft.revisionCount ?? ''} onChange={(event) => updateDraft('revisionCount', event.target.value === '' ? null : Number(event.target.value))} /></label>
-                <label>초안 기한<input type="date" value={draft.draftDueDate ?? ''} onChange={(event) => updateDraft('draftDueDate', event.target.value || null)} /></label>
-                <label>게시 기한<input type="date" value={draft.publishDueDate ?? ''} onChange={(event) => updateDraft('publishDueDate', event.target.value || null)} /></label>
-                <label>2차 사용<input value={draft.secondaryUsage ?? ''} onChange={(event) => updateDraft('secondaryUsage', event.target.value || null)} /></label>
-                <label>지급 조건<input value={draft.paymentCondition ?? ''} onChange={(event) => updateDraft('paymentCondition', event.target.value || null)} /></label>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button onClick={() => void saveDraft()} disabled={savingId === message.id}>수정 저장</button>
-                  <button onClick={() => { setEditingId(null); setDraft(null); }}>취소</button>
-                </div>
-              </div>
+              <div className="edit-panel" style={{ margin: '18px -22px -20px' }}><div className="form-grid">
+                <label className="field"><span className="field-label">거래처</span><input value={draft.client ?? ''} onChange={(event) => updateDraft('client', event.target.value || null)} /></label>
+                <label className="field"><span className="field-label">거래 유형</span><input value={draft.dealType ?? ''} onChange={(event) => updateDraft('dealType', event.target.value || null)} /></label>
+                <label className="field"><span className="field-label">금액</span><input type="number" min="0" value={draft.amount ?? ''} onChange={(event) => updateDraft('amount', event.target.value === '' ? null : Number(event.target.value))} /></label>
+                <label className="field"><span className="field-label">수정 횟수</span><input type="number" min="0" value={draft.revisionCount ?? ''} onChange={(event) => updateDraft('revisionCount', event.target.value === '' ? null : Number(event.target.value))} /></label>
+                <label className="field"><span className="field-label">초안 기한</span><input type="date" value={draft.draftDueDate ?? ''} onChange={(event) => updateDraft('draftDueDate', event.target.value || null)} /></label>
+                <label className="field"><span className="field-label">게시 기한</span><input type="date" value={draft.publishDueDate ?? ''} onChange={(event) => updateDraft('publishDueDate', event.target.value || null)} /></label>
+                <label className="field"><span className="field-label">2차 사용</span><input value={draft.secondaryUsage ?? ''} onChange={(event) => updateDraft('secondaryUsage', event.target.value || null)} /></label>
+                <label className="field"><span className="field-label">지급 조건</span><input value={draft.paymentCondition ?? ''} onChange={(event) => updateDraft('paymentCondition', event.target.value || null)} /></label>
+              </div><div className="action-row" style={{ marginTop: 14 }}><button className="btn btn-primary" onClick={() => void saveDraft()} disabled={savingId === message.id}>수정 저장</button><button className="btn btn-secondary" onClick={() => { setEditingId(null); setDraft(null); }}>취소</button></div></div>
             ) : (
-              <>
-                <p>거래처: {message.analysis.client || '확인 필요'} · 금액: {message.analysis.amount?.toLocaleString() ?? '확인 필요'}원</p>
-                {!!message.analysis.risks.length && <p style={{ color: '#b54708' }}>확인 항목: {message.analysis.risks.join(' · ')}</p>}
-              </>
+              <><div className="message-analysis"><div className="analysis-value"><small>거래처</small><strong>{message.analysis.client || '확인 필요'}</strong></div><div className="analysis-value"><small>제안 금액</small><strong>{message.analysis.amount == null ? '확인 필요' : `${message.analysis.amount.toLocaleString()}원`}</strong></div></div>{!!message.analysis.risks.length && <div className="alert alert-warning">확인 항목 · {message.analysis.risks.join(' · ')}</div>}</>
             )}
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={() => startEditing(message)} disabled={message.status === 'SAVED' || editingId === message.id}>분석 수정</button>
-              <button onClick={() => void saveAsDeal(message.id)} disabled={message.status === 'SAVED' || savingId === message.id || editingId === message.id}>
+            <div className="action-row">
+              <button className="btn btn-secondary" onClick={() => startEditing(message)} disabled={message.status === 'SAVED' || editingId === message.id}>분석 수정</button>
+              <button className="btn btn-primary" onClick={() => void saveAsDeal(message.id)} disabled={message.status === 'SAVED' || savingId === message.id || editingId === message.id}>
                 {message.status === 'SAVED' ? '거래 저장됨' : savingId === message.id ? '저장 중…' : '이 분석으로 거래 저장'}
               </button>
             </div>
-          </article>
+          </div></article>
         ))}
       </div>
-    </main>
+    </>
   );
 }

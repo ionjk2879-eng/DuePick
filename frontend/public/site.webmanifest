@@ -1,0 +1,10 @@
+{
+  "name": "Duepick",
+  "short_name": "Duepick",
+  "description": "제안부터 입금까지, 놓치지 않게",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f7fb",
+  "theme_color": "#5b5ce2",
+  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

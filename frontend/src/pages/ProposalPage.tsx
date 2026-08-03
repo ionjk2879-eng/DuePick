@@ -1,5 +1,4 @@
 import { useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
 import { isAxiosError } from 'axios';
 import { previewProposal, type ProposalAnalysis } from '../api/proposal';
 import ProposalEditor from '../components/proposal/ProposalEditor';
@@ -45,19 +44,11 @@ export default function ProposalPage() {
   };
 
   return (
-    <main style={{ maxWidth: 820, margin: '40px auto', padding: '0 20px', fontFamily: 'sans-serif', color: '#172033' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <h1 style={{ marginBottom: 6 }}>외주 제안 분석</h1>
-          <p style={{ marginTop: 0, color: '#667085' }}>협찬·외주 메일을 붙여넣으면 거래 조건과 해야 할 일을 한눈에 정리합니다.</p>
-        </div>
-        <div style={{ display: 'flex', gap: 12 }}><Link to="/deals">거래 목록</Link><Link to="/dashboard">비용 대시보드</Link></div>
-      </div>
-
-      <ProposalEditor text={text} loading={loading} onTextChange={setText} onLoadExample={() => setText(example)} onSubmit={handleSubmit} />
-
-      {error && <p style={{ color: '#b42318', background: '#fef3f2', padding: 12, borderRadius: 8 }}>{error}</p>}
+    <>
+      <header className="page-header"><div><p className="eyebrow">MANUAL ANALYSIS</p><h1 className="page-title">제안 직접 분석</h1><p className="page-description">메일이나 메신저로 받은 내용을 붙여넣으면 거래 조건, 일정, 확인할 위험을 구조화합니다.</p></div></header>
+      <section className="card card-body"><div className="alert alert-info" style={{ marginTop: 0 }}>원문에 없는 조건은 임의로 채우지 않습니다. 분석 후 반드시 원문과 결과를 함께 확인해주세요.</div><ProposalEditor text={text} loading={loading} onTextChange={setText} onLoadExample={() => setText(example)} onSubmit={handleSubmit} /></section>
+      {error && <div className="alert alert-error">{error}</div>}
       {result && <AnalysisResult result={result} saving={saving} saved={saved} onSave={handleSave} />}
-    </main>
+    </>
   );
 }

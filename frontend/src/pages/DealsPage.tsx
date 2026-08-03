@@ -26,31 +26,24 @@ export default function DealsPage() {
   };
 
   const total = deals.filter((deal) => deal.status !== 'REVIEW').reduce((sum, deal) => sum + (deal.amount ?? 0), 0);
+  const paid = deals.filter((deal) => deal.status === 'PAID').reduce((sum, deal) => sum + (deal.amount ?? 0), 0);
 
   return (
-    <main style={{ maxWidth: 900, margin: '40px auto', padding: '0 20px', fontFamily: 'sans-serif' }}>
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div><h1 style={{ marginBottom: 4 }}>협찬·외주 거래</h1><p style={{ color: '#667085', marginTop: 0 }}>확정 거래 합계 {total.toLocaleString()}원</p></div>
-        <nav style={{ display: 'flex', gap: 12 }}><Link to="/proposals">새 제안 분석</Link><Link to="/dashboard">비용 대시보드</Link></nav>
-      </header>
-      {error && <p style={{ color: '#b42318' }}>{error}</p>}
-      {!deals.length && <div style={{ border: '1px dashed #ccd3df', borderRadius: 10, padding: 30, textAlign: 'center' }}>저장된 거래가 없습니다. <Link to="/proposals">첫 제안을 분석해 보세요.</Link></div>}
-      <div style={{ display: 'grid', gap: 14 }}>
-        {deals.map((deal) => <article key={deal.id} style={{ border: '1px solid #d8dee9', borderRadius: 10, padding: 18 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-            <div><strong>{deal.client ?? '거래처 확인 필요'}</strong><span style={{ color: '#667085', marginLeft: 8 }}>{deal.dealType ?? '유형 미정'}</span></div>
-            <strong>{deal.amount == null ? '금액 확인 필요' : `${deal.amount.toLocaleString()}원`}</strong>
-          </div>
-          <p>{deal.deliverables.join(' · ') || '작업 범위 확인 필요'}</p>
-          <p style={{ fontSize: 14, color: '#667085' }}>초안 {deal.draftDueDate ?? '-'} · 게시 {deal.publishDueDate ?? '-'} · 지급 {deal.paymentCondition ?? '-'}</p>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <select value={deal.status} onChange={(event) => changeStatus(deal.id, event.target.value as DealStatus)}>
+    <>
+      <header className="page-header"><div><p className="eyebrow">DEAL PIPELINE</p><h1 className="page-title">거래 관리</h1><p className="page-description">제안부터 입금까지 거래의 현재 위치와 중요한 조건을 한눈에 확인하세요.</p></div><div className="page-actions"><Link className="btn btn-primary" to="/proposals">＋ 새 제안 분석</Link></div></header>
+      <section className="grid-3" style={{ marginBottom: 24 }}><div className="card metric-card"><div className="metric-label">전체 거래</div><div className="metric-value">{deals.length}건</div><div className="metric-note">확인 대기 포함</div></div><div className="card metric-card"><div className="metric-label">확정 거래 금액</div><div className="metric-value">{total.toLocaleString()}원</div><div className="metric-note">확인 완료된 거래</div></div><div className="card metric-card"><div className="metric-label">입금 완료</div><div className="metric-value">{paid.toLocaleString()}원</div><div className="metric-note">실제 수령 기준</div></div></section>
+      {error && <div className="alert alert-error">{error}</div>}
+      {!deals.length && <div className="empty-state"><div className="empty-icon">▦</div><h3>아직 저장된 거래가 없어요</h3><p>받은 메일을 확인하거나 제안 원문을 직접 분석해 첫 거래를 만들어보세요.</p><Link className="btn btn-primary" style={{ marginTop: 18 }} to="/inbox">받은 제안 보기</Link></div>}
+      <div className="stack">
+        {deals.map((deal) => <article key={deal.id} className="card deal-card">
+          <div className="deal-top"><div><div className="deal-client">{deal.client ?? '거래처 확인 필요'}</div><div className="deal-type">{deal.dealType ?? '거래 유형 미정'}</div></div><div className="deal-amount">{deal.amount == null ? '금액 확인 필요' : `${deal.amount.toLocaleString()}원`}</div></div>
+          <div className="deal-deliverables">{deal.deliverables.length ? deal.deliverables.map((item) => <span className="tag" key={item}>{item}</span>) : <span className="tag">작업 범위 확인 필요</span>}</div>
+          <div className="deal-meta"><div><span className="meta-label">초안 기한</span><span className="meta-value">{deal.draftDueDate ?? '-'}</span></div><div><span className="meta-label">게시 기한</span><span className="meta-value">{deal.publishDueDate ?? '-'}</span></div><div><span className="meta-label">지급 조건</span><span className="meta-value">{deal.paymentCondition ?? '-'}</span></div></div>
+          <div className="deal-footer"><select aria-label="거래 상태" value={deal.status} onChange={(event) => changeStatus(deal.id, event.target.value as DealStatus)} style={{ width: 'auto' }}>
               {Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-            </select>
-            <button onClick={() => remove(deal.id)}>삭제</button>
-          </div>
+            </select><div className="action-row"><span className={`badge badge-${deal.status.toLowerCase().replace('_', '-')}`}>{statusLabels[deal.status]}</span><button className="btn btn-danger btn-sm" onClick={() => remove(deal.id)}>삭제</button></div></div>
         </article>)}
       </div>
-    </main>
+    </>
   );
 }

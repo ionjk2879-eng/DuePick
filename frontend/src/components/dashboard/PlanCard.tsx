@@ -8,12 +8,6 @@ interface PlanCardProps {
 
 export default function PlanCard({ plan, upgrading, onUpgrade }: PlanCardProps) {
   return (
-    <section style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid #ddd', borderRadius: 8, padding: '10px 16px', margin: '12px 0', background: plan.isPro ? '#eff6ff' : '#fafafa' }}>
-      <div>
-        <strong style={{ color: plan.isPro ? '#2563eb' : '#555' }}>{plan.isPro ? 'PRO 플랜' : 'FREE 플랜'}</strong>
-        {plan.isPro && plan.expiresAt && <span style={{ marginLeft: 8, fontSize: 13, color: '#777' }}>{new Date(plan.expiresAt).toLocaleDateString()}까지</span>}
-      </div>
-      {!plan.isPro && <button onClick={onUpgrade} disabled={upgrading}>{upgrading ? '업그레이드 중...' : 'PRO로 업그레이드'}</button>}
-    </section>
+    <div className="card metric-card"><div className="metric-label">현재 플랜</div><div className="metric-value" style={{ fontSize: 20 }}><span className={`badge ${plan.isPro ? 'badge-pro' : 'badge-free'}`}>{plan.isPro ? 'PRO' : 'FREE'}</span></div>{plan.isPro && plan.expiresAt ? <div className="metric-note">{new Date(plan.expiresAt).toLocaleDateString()}까지</div> : <button className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={onUpgrade} disabled={upgrading}>{upgrading ? '처리 중…' : 'PRO 살펴보기'}</button>}</div>
   );
 }
