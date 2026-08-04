@@ -69,16 +69,17 @@ app.get('/api/integrations/notion/callback', async (c) => {
       body: JSON.stringify({ grant_type: 'authorization_code', code, redirect_uri: notionRedirectUri(c.env) }),
     });
     const token = await response.json<{ access_token?: string; refresh_token?: string; workspace_id?: string;
-      workspace_name?: string; bot_id?: string; message?: string }>();
+      workspace_name?: string; bot_id?: string; duplicated_template_id?: string | null; message?: string }>();
     if (!response.ok || !token.access_token || !token.workspace_id || !token.bot_id) throw new Error(token.message || 'Notion 인증에 실패했습니다.');
     await c.env.DB.prepare(`INSERT INTO notion_connections
-      (user_id, access_token_encrypted, refresh_token_encrypted, workspace_id, workspace_name, bot_id)
-      VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET access_token_encrypted = excluded.access_token_encrypted,
+      (user_id, access_token_encrypted, refresh_token_encrypted, workspace_id, workspace_name, bot_id, root_page_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET access_token_encrypted = excluded.access_token_encrypted,
       refresh_token_encrypted = excluded.refresh_token_encrypted, workspace_id = excluded.workspace_id,
-      workspace_name = excluded.workspace_name, bot_id = excluded.bot_id, updated_at = CURRENT_TIMESTAMP`)
+      workspace_name = excluded.workspace_name, bot_id = excluded.bot_id,
+      root_page_id = COALESCE(excluded.root_page_id, notion_connections.root_page_id), updated_at = CURRENT_TIMESTAMP`)
       .bind(userId, await encryptNotionToken(token.access_token, c.env.JWT_SECRET),
         token.refresh_token ? await encryptNotionToken(token.refresh_token, c.env.JWT_SECRET) : null,
-        token.workspace_id, token.workspace_name ?? null, token.bot_id).run();
+        token.workspace_id, token.workspace_name ?? null, token.bot_id, token.duplicated_template_id ?? null).run();
     return c.redirect(`${origin}/deals?notion=connected`);
   } catch (error) {
     console.error(error instanceof Error ? error.message : 'Notion OAuth 처리 실패');
@@ -118,6 +119,10 @@ app.post('/api/integrations/notion/setup', async (c) => {
     return Object.values(properties ?? {}).find((property) => property.type === 'title')?.title?.map((part) => part.plain_text || '').join('') || '';
   };
   let rootId = connection.root_page_id; let rootUrl = connection.root_page_url; let createdRoot = false;
+  if (rootId && !rootUrl) {
+    const existingPage = await request(`pages/${rootId}`, undefined, 'GET');
+    rootUrl = String(existingPage.url || '');
+  }
   if (!rootId) {
     const existingRoot = (await search('Duepick 홈', 'page')).find((item) => plainTitle(item) === 'Duepick 홈');
     if (existingRoot) { rootId = String(existingRoot.id); rootUrl = String(existingRoot.url || ''); }
