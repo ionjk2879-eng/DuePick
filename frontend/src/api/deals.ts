@@ -19,6 +19,9 @@ export interface Deal {
   risks: string[];
   status: DealStatus;
   paidAt: string | null;
+  notionPageId: string | null;
+  notionPageUrl: string | null;
+  notionExportedAt: string | null;
   rawText: string;
   createdAt: string;
   updatedAt: string;

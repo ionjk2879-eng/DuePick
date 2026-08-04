@@ -4,6 +4,7 @@ import { analyzeProposal, type ProposalAnalysis } from './analyze';
 import { analyzeWithAdapter } from './llm';
 import { body, dealResponse, expenseResponse, getUser, subscriptionResponse, type AppContext } from './helpers';
 import { createToken, hashPassword, randomToken, verifyPassword, verifyToken } from './security';
+import { createNotionState, decryptNotionToken, encryptNotionToken, notionAppOrigin, notionHeaders, notionRedirectUri, verifyNotionState } from './notion';
 import type { Env, UserRow, Variables } from './types';
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -17,7 +18,7 @@ app.use('*', async (c, next) => cors({
 })(c, next));
 
 app.use('/api/*', async (c, next) => {
-  if (c.req.path.startsWith('/api/auth/') || c.req.path === '/api/health' || c.req.path === '/api/webhooks/resend' || c.req.method === 'OPTIONS') return next();
+  if (c.req.path.startsWith('/api/auth/') || c.req.path === '/api/health' || c.req.path === '/api/webhooks/resend' || c.req.path === '/api/integrations/notion/callback' || c.req.method === 'OPTIONS') return next();
   const authorization = c.req.header('Authorization');
   const userId = authorization?.startsWith('Bearer ') ? await verifyToken(authorization.slice(7), c.env.JWT_SECRET) : null;
   if (!userId) return c.json({ message: '로그인이 필요합니다.' }, 401);
@@ -34,6 +35,60 @@ app.onError((error, c) => {
 });
 
 app.get('/api/health', (c) => c.json({ status: 'ok', runtime: 'cloudflare-workers' }));
+
+app.get('/api/integrations/notion/status', async (c) => {
+  const row = await c.env.DB.prepare('SELECT workspace_id, workspace_name, updated_at FROM notion_connections WHERE user_id = ?')
+    .bind(getUser(c as AppContext).id).first<{ workspace_id: string; workspace_name: string | null; updated_at: string }>();
+  return c.json(row ? { connected: true, workspaceId: row.workspace_id, workspaceName: row.workspace_name, updatedAt: row.updated_at }
+    : { connected: false, workspaceId: null, workspaceName: null, updatedAt: null });
+});
+
+app.post('/api/integrations/notion/connect', async (c) => {
+  if (!c.env.NOTION_CLIENT_ID || !c.env.NOTION_CLIENT_SECRET) {
+    return c.json({ message: 'Notion Public OAuth 설정이 아직 등록되지 않았습니다.' }, 503);
+  }
+  const state = await createNotionState(getUser(c as AppContext).id, c.env.JWT_SECRET);
+  const query = new URLSearchParams({ owner: 'user', client_id: c.env.NOTION_CLIENT_ID,
+    redirect_uri: notionRedirectUri(c.env), response_type: 'code', state });
+  return c.json({ authorizationUrl: `https://api.notion.com/v1/oauth/authorize?${query}` });
+});
+
+app.get('/api/integrations/notion/callback', async (c) => {
+  const origin = notionAppOrigin(c.env);
+  const state = c.req.query('state') ?? '';
+  const userId = await verifyNotionState(state, c.env.JWT_SECRET);
+  if (!userId || c.req.query('error')) return c.redirect(`${origin}/deals?notion=denied`);
+  const code = c.req.query('code');
+  if (!code || !c.env.NOTION_CLIENT_ID || !c.env.NOTION_CLIENT_SECRET) return c.redirect(`${origin}/deals?notion=error`);
+  try {
+    const response = await fetch('https://api.notion.com/v1/oauth/token', {
+      method: 'POST',
+      headers: { Authorization: `Basic ${btoa(`${c.env.NOTION_CLIENT_ID}:${c.env.NOTION_CLIENT_SECRET}`)}`,
+        Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ grant_type: 'authorization_code', code, redirect_uri: notionRedirectUri(c.env) }),
+    });
+    const token = await response.json<{ access_token?: string; refresh_token?: string; workspace_id?: string;
+      workspace_name?: string; bot_id?: string; message?: string }>();
+    if (!response.ok || !token.access_token || !token.workspace_id || !token.bot_id) throw new Error(token.message || 'Notion 인증에 실패했습니다.');
+    await c.env.DB.prepare(`INSERT INTO notion_connections
+      (user_id, access_token_encrypted, refresh_token_encrypted, workspace_id, workspace_name, bot_id)
+      VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET access_token_encrypted = excluded.access_token_encrypted,
+      refresh_token_encrypted = excluded.refresh_token_encrypted, workspace_id = excluded.workspace_id,
+      workspace_name = excluded.workspace_name, bot_id = excluded.bot_id, updated_at = CURRENT_TIMESTAMP`)
+      .bind(userId, await encryptNotionToken(token.access_token, c.env.JWT_SECRET),
+        token.refresh_token ? await encryptNotionToken(token.refresh_token, c.env.JWT_SECRET) : null,
+        token.workspace_id, token.workspace_name ?? null, token.bot_id).run();
+    return c.redirect(`${origin}/deals?notion=connected`);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : 'Notion OAuth 처리 실패');
+    return c.redirect(`${origin}/deals?notion=error`);
+  }
+});
+
+app.delete('/api/integrations/notion', async (c) => {
+  await c.env.DB.prepare('DELETE FROM notion_connections WHERE user_id = ?').bind(getUser(c as AppContext).id).run();
+  return c.body(null, 204);
+});
 
 app.post('/api/auth/signup', async (c) => {
   const input = await body<{ email?: string; password?: string; nickname?: string }>(c as AppContext);
@@ -199,6 +254,64 @@ app.patch('/api/deals/:id', async (c) => {
       revisionCount, text(input.secondaryUsage), text(input.paymentCondition), JSON.stringify(tasks), JSON.stringify(risks), id, user.id).run();
   const row = await c.env.DB.prepare('SELECT * FROM deals WHERE id = ? AND user_id = ?').bind(id, user.id).first<Record<string, unknown>>();
   return c.json(dealResponse(row!));
+});
+
+app.post('/api/deals/:id/notion', async (c) => {
+  const user = getUser(c as AppContext);
+  const id = Number(c.req.param('id'));
+  const deal = await c.env.DB.prepare('SELECT * FROM deals WHERE id = ? AND user_id = ?').bind(id, user.id)
+    .first<Record<string, unknown>>();
+  if (!deal) return c.json({ message: '거래를 찾을 수 없습니다.' }, 404);
+  if (deal.status === 'REVIEW') return c.json({ message: '사용자가 확인한 거래만 Notion으로 내보낼 수 있습니다.' }, 400);
+  const connection = await c.env.DB.prepare('SELECT access_token_encrypted, refresh_token_encrypted FROM notion_connections WHERE user_id = ?')
+    .bind(user.id).first<{ access_token_encrypted: string; refresh_token_encrypted: string | null }>();
+  if (!connection) return c.json({ message: '먼저 Notion을 연결해주세요.' }, 409);
+
+  const text = (content: unknown) => [{ type: 'text', text: { content: String(content ?? '').slice(0, 2000) } }];
+  const paragraph = (label: string, value: unknown) => ({ object: 'block', type: 'paragraph',
+    paragraph: { rich_text: text(`${label}: ${value || '-'}`) } });
+  const list = (label: string, value: unknown) => {
+    let items: string[] = [];
+    try { items = Array.isArray(value) ? value.map(String) : JSON.parse(String(value || '[]')); } catch { items = []; }
+    return { object: 'block', type: 'paragraph', paragraph: { rich_text: text(`${label}: ${items.length ? items.join(' · ') : '-'}`) } };
+  };
+  const statusLabels: Record<string, string> = { CONFIRMED: '확정', IN_PROGRESS: '진행 중', COMPLETED: '작업 완료', PAID: '입금 완료' };
+  const title = `${String(deal.client || '거래처 확인 필요')} · ${String(deal.deal_type || '협찬·외주')}`.slice(0, 2000);
+  const children = [
+    paragraph('상태', statusLabels[String(deal.status)] || String(deal.status)), paragraph('금액', deal.amount == null ? '-' : `${Number(deal.amount).toLocaleString()}원`),
+    paragraph('초안 기한', deal.draft_due_date), paragraph('게시 기한', deal.publish_due_date), paragraph('입금 예정일', deal.payment_due_date),
+    paragraph('수정 횟수', deal.revision_count), paragraph('2차 활용', deal.secondary_usage), paragraph('지급 조건', deal.payment_condition),
+    list('작업물', deal.deliverables), list('체크리스트', deal.tasks), list('확인 위험', deal.risks),
+    { object: 'block', type: 'divider', divider: {} }, paragraph('원문', String(deal.raw_text || '').slice(0, 1900)),
+  ];
+  const pageBody = JSON.stringify({ properties: { title: { type: 'title', title: text(title) } }, children });
+  let accessToken = await decryptNotionToken(connection.access_token_encrypted, c.env.JWT_SECRET);
+  const createPage = () => fetch('https://api.notion.com/v1/pages', {
+    method: 'POST', headers: notionHeaders(accessToken), body: pageBody,
+  });
+  let response = await createPage();
+  if (response.status === 401 && connection.refresh_token_encrypted && c.env.NOTION_CLIENT_ID && c.env.NOTION_CLIENT_SECRET) {
+    const refreshToken = await decryptNotionToken(connection.refresh_token_encrypted, c.env.JWT_SECRET);
+    const refreshed = await fetch('https://api.notion.com/v1/oauth/token', {
+      method: 'POST', headers: { Authorization: `Basic ${btoa(`${c.env.NOTION_CLIENT_ID}:${c.env.NOTION_CLIENT_SECRET}`)}`,
+        Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ grant_type: 'refresh_token', refresh_token: refreshToken }),
+    });
+    const tokens = await refreshed.json<{ access_token?: string; refresh_token?: string }>();
+    if (refreshed.ok && tokens.access_token) {
+      accessToken = tokens.access_token;
+      await c.env.DB.prepare('UPDATE notion_connections SET access_token_encrypted = ?, refresh_token_encrypted = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?')
+        .bind(await encryptNotionToken(tokens.access_token, c.env.JWT_SECRET),
+          tokens.refresh_token ? await encryptNotionToken(tokens.refresh_token, c.env.JWT_SECRET) : connection.refresh_token_encrypted, user.id).run();
+      response = await createPage();
+    }
+  }
+  const page = await response.json<{ id?: string; url?: string; message?: string }>();
+  if (!response.ok || !page.id || !page.url) return c.json({ message: page.message || 'Notion 페이지를 만들지 못했습니다.' }, 400);
+  await c.env.DB.prepare('UPDATE deals SET notion_page_id = ?, notion_page_url = ?, notion_exported_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?')
+    .bind(page.id, page.url, id, user.id).run();
+  const updated = await c.env.DB.prepare('SELECT * FROM deals WHERE id = ? AND user_id = ?').bind(id, user.id).first<Record<string, unknown>>();
+  return c.json(dealResponse(updated!));
 });
 
 app.put('/api/expenses/:id/evidence', async (c) => {

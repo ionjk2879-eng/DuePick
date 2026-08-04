@@ -16,7 +16,9 @@ export function dealResponse(row: Record<string, unknown>) {
     secondaryUsage: row.secondary_usage, paymentCondition: row.payment_condition,
     paymentDueDate: row.payment_due_date,
     tasks: jsonArray(row.tasks), risks: jsonArray(row.risks), status: row.status,
-    rawText: row.raw_text, paidAt: row.paid_at, createdAt: row.created_at, updatedAt: row.updated_at,
+    rawText: row.raw_text, paidAt: row.paid_at, notionPageId: row.notion_page_id,
+    notionPageUrl: row.notion_page_url, notionExportedAt: row.notion_exported_at,
+    createdAt: row.created_at, updatedAt: row.updated_at,
   };
 }
 

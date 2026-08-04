@@ -8,6 +8,9 @@ export interface Env {
   RESEND_WEBHOOK_SECRET?: string;
   ANTHROPIC_API_KEY?: string;
   ANTHROPIC_MODEL?: string;
+  NOTION_CLIENT_ID?: string;
+  NOTION_CLIENT_SECRET?: string;
+  NOTION_REDIRECT_URI?: string;
 }
 
 export interface UserRow {

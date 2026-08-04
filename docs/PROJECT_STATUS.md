@@ -4,9 +4,9 @@
 
 ## 현재 단계
 
-**Cloudflare 전환 및 운영 안정화·증빙 업로드·AI 분석 어댑터 구현 완료**
+**Cloudflare 핵심 흐름 완료, Notion Public OAuth 운영 설정 대기**
 
-Cloudflare Workers + D1 기반으로 전환했으며, 직접 붙여넣기와 사용자별 Resend 전달 주소를 지원한다. 인바운드 메일은 분석 초안으로만 저장되고 자동으로 거래 확정되지 않는다. 실패 상태와 사용자별 재처리, R2 증빙 업로드, 선택적 Claude Structured Outputs 분석을 구현하고 운영 배포했다. 운영 `duepick-evidence` R2 버킷 생성과 D1 `0004_inbound_evidence.sql` 적용을 완료했다. Resend 비밀값은 등록되어 있으며 Anthropic 비밀값은 선택 사항으로 아직 등록하지 않았다.
+Cloudflare Workers + D1 기반 핵심 흐름과 선택적 Claude 분석을 운영 중이다. Notion Public OAuth 연결·해제, 암호화 토큰 저장, 확인된 거래의 선택적 개인 페이지 내보내기 코드를 구현했다. 실제 OAuth 왕복 검증에는 Notion Developer Portal의 Public 연결 등록과 운영 비밀값 설정이 남아 있다. Anthropic 비밀값은 선택 사항으로 아직 등록하지 않았다.
 
 ## 현재 구현 상태
 
@@ -45,10 +45,12 @@ Cloudflare Workers + D1 기반으로 전환했으며, 직접 붙여넣기와 사
 - 받은 메일 분석 초안에서 작업물·체크리스트·위험 항목을 줄 단위로 수정하는 기능
 - 거래 저장 후 거래처·유형·금액·작업물·수정 횟수·2차 사용·지급 조건·체크리스트·위험 항목을 수정하는 상세 편집
 - 초안 기한·게시 기한·입금 예정일을 거래별로 관리하는 일정 필드
+- Notion Public OAuth 연결·상태 확인·해제 API와 사용자별 암호화 토큰 저장
+- 확인 필요 상태를 제외한 거래의 선택적 Notion 개인 페이지 내보내기와 결과 링크 보관
 
 ## 다음 작업
 
-1. Notion Public OAuth/API로 확인된 거래를 등록한다.
+1. Notion Public 연결을 Developer Portal에 등록하고 운영 OAuth 왕복·거래 내보내기를 검증한다.
 2. Google Calendar에 초안·게시·입금 예정 일정을 만든다.
 3. Google Sheets 내보내기와 PDF/OCR 첨부 분석을 추가한다.
 
@@ -81,6 +83,8 @@ Resend 단계는 다음 조건을 만족하면 완료로 본다.
 - `ANTHROPIC_API_KEY`가 있을 때 Claude Messages API Structured Outputs를 사용하고, 키가 없거나 호출이 실패하면 규칙 기반 분석기로 복귀한다.
 - Anthropic API는 Claude 구독과 별도 비용이 발생하므로 실제 사용자 메일에서 규칙 기반 분석의 한계가 확인될 때까지 운영 키 등록을 보류한다.
 - Notion·Calendar 같은 외부 연동 전에 Duepick 내부에서 거래 조건과 핵심 일정을 수정·관리할 수 있는 흐름을 먼저 완결한다.
+- Notion OAuth 토큰은 D1에 평문으로 저장하지 않고 `JWT_SECRET`에서 파생한 AES-GCM 키로 암호화하며, 사용자가 연결을 해제하면 삭제한다.
+- Notion으로 자동 전송하지 않고 `확인 필요`가 아닌 거래만 사용자가 직접 내보낸다.
 
 ## 검증 명령
 

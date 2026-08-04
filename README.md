@@ -39,6 +39,9 @@
 | `POST` | `/api/deals` | 확인한 분석 결과 저장 |
 | `PATCH` | `/api/deals/{id}/status` | 거래 상태 변경 |
 | `DELETE` | `/api/deals/{id}` | 거래 삭제 |
+| `POST` | `/api/deals/{id}/notion` | 확인된 거래를 연결된 Notion에 내보내기 |
+
+Notion 연결 토큰은 `JWT_SECRET`에서 파생한 AES-GCM 키로 암호화해 D1에 저장합니다. OAuth 설정이 없어도 거래 관리와 다른 기능은 정상 동작합니다.
 
 ## 실행
 
@@ -84,6 +87,9 @@ Worker 단독 개발 시 프론트의 `frontend/.env.local`에 `VITE_API_BASE_UR
 | `RESEND_WEBHOOK_SECRET` | 없음 | Resend 웹훅 서명 검증 키 |
 | `ANTHROPIC_API_KEY` | 없음 | 선택적 Claude Structured Outputs 제안 분석용 키 |
 | `ANTHROPIC_MODEL` | `claude-haiku-4-5-20251001` | 제안 분석에 사용할 Claude 모델 |
+| `NOTION_CLIENT_ID` | 없음 | Notion Public OAuth 클라이언트 ID |
+| `NOTION_CLIENT_SECRET` | 없음 | Notion Public OAuth 클라이언트 비밀값 |
+| `NOTION_REDIRECT_URI` | 첫 번째 `APP_ORIGIN` + 콜백 경로 | Notion에 등록한 OAuth 콜백 주소 |
 | `RESEND_RECEIVING_DOMAIN` | `zenuuxdoeu.resend.app` | 사용자별 전달 주소의 수신 도메인 |
 | `APP_ORIGIN` | `http://localhost:5173` | 허용할 프론트엔드 Origin, 쉼표로 복수 지정 가능 |
 | `VITE_API_BASE_URL` | `/api` | 프론트의 API 기본 주소 |
@@ -110,7 +116,7 @@ Content-Type: application/json
 
 외부 서비스는 핵심 도메인과 분리해 다음 순서로 연결합니다.
 
-1. Notion Public OAuth/API로 거래 데이터베이스 등록
+1. Notion Public 연결을 Developer Portal에 등록하고 운영 OAuth 왕복·거래 내보내기를 검증
 2. Google Calendar에 초안·게시·입금 일정을 생성
 3. Google Sheets 내보내기와 첨부 PDF/OCR 분석 추가
 
