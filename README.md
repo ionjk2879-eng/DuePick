@@ -82,13 +82,13 @@ Worker 단독 개발 시 프론트의 `frontend/.env.local`에 `VITE_API_BASE_UR
 | `JWT_SECRET` | 없음 | 운영 환경에서는 32자 이상의 임의 값 필수 |
 | `RESEND_API_KEY` | 없음 | 수신 메일 본문 조회용 API 키 |
 | `RESEND_WEBHOOK_SECRET` | 없음 | Resend 웹훅 서명 검증 키 |
-| `OPENAI_API_KEY` | 없음 | 선택적 Structured Outputs 제안 분석용 키 |
-| `OPENAI_MODEL` | `gpt-5.6-sol` | 제안 분석에 사용할 Responses API 모델 |
+| `ANTHROPIC_API_KEY` | 없음 | 선택적 Claude Structured Outputs 제안 분석용 키 |
+| `ANTHROPIC_MODEL` | `claude-haiku-4-5-20251001` | 제안 분석에 사용할 Claude 모델 |
 | `RESEND_RECEIVING_DOMAIN` | `zenuuxdoeu.resend.app` | 사용자별 전달 주소의 수신 도메인 |
 | `APP_ORIGIN` | `http://localhost:5173` | 허용할 프론트엔드 Origin, 쉼표로 복수 지정 가능 |
 | `VITE_API_BASE_URL` | `/api` | 프론트의 API 기본 주소 |
 
-운영 D1 생성 후 `worker/wrangler.jsonc`의 `database_id`를 실제 ID로 교체합니다. R2에는 `duepick-evidence` 버킷이 필요합니다. 비밀값은 저장소에 커밋하지 않습니다. `OPENAI_API_KEY`가 없거나 AI 호출이 실패하면 규칙 기반 분석기가 계속 동작합니다.
+운영 D1 생성 후 `worker/wrangler.jsonc`의 `database_id`를 실제 ID로 교체합니다. R2에는 `duepick-evidence` 버킷이 필요합니다. 비밀값은 저장소에 커밋하지 않습니다. `ANTHROPIC_API_KEY`가 없거나 AI 호출이 실패하면 규칙 기반 분석기가 계속 동작합니다.
 
 `main` 브랜치에 push하면 Cloudflare Workers Builds가 `worker` 디렉터리를 기준으로 프론트엔드와 Worker를 자동 배포합니다.
 
@@ -114,7 +114,7 @@ Content-Type: application/json
 2. Google Calendar에 초안·게시·입금 일정을 생성
 3. Google Sheets 내보내기와 첨부 PDF/OCR 분석 추가
 
-OpenAI Structured Outputs 어댑터는 준비되어 있지만 API 비용 검증 전까지 운영 키 등록을 보류합니다. 키가 없어도 규칙 기반 분석과 사용자 수정 흐름은 정상 동작합니다.
+Claude Messages API의 Structured Outputs 어댑터는 준비되어 있지만 API 비용 검증 전까지 운영 키 등록을 보류합니다. 키가 없어도 규칙 기반 분석과 사용자 수정 흐름은 정상 동작합니다.
 
 외부 API 키가 없어도 현재 애플리케이션과 빌드는 정상 동작합니다.
 

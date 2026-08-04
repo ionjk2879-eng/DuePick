@@ -6,8 +6,8 @@ export interface Env {
   RESEND_RECEIVING_DOMAIN: string;
   RESEND_API_KEY?: string;
   RESEND_WEBHOOK_SECRET?: string;
-  OPENAI_API_KEY?: string;
-  OPENAI_MODEL?: string;
+  ANTHROPIC_API_KEY?: string;
+  ANTHROPIC_MODEL?: string;
 }
 
 export interface UserRow {
