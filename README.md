@@ -116,7 +116,7 @@ Content-Type: application/json
 
 외부 서비스는 핵심 도메인과 분리해 다음 순서로 연결합니다.
 
-1. Notion Public 연결을 Developer Portal에 등록하고 운영 OAuth 왕복·거래 내보내기를 검증
+1. OAuth 중 Duepick 홈 템플릿을 자동 복제하고 거래 관리 데이터베이스 내보내기를 검증
 2. Google Calendar에 초안·게시·입금 일정을 생성
 3. Google Sheets 내보내기와 첨부 PDF/OCR 분석 추가
 

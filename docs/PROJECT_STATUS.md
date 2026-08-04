@@ -4,9 +4,9 @@
 
 ## 현재 단계
 
-**Cloudflare 핵심 흐름 완료, Notion Public OAuth 운영 설정 대기**
+**Cloudflare 핵심 흐름 완료, Notion Public OAuth 운영 검증 완료**
 
-Cloudflare Workers + D1 기반 핵심 흐름과 선택적 Claude 분석을 운영 중이다. Notion Public OAuth 연결·해제, 암호화 토큰 저장, 확인된 거래의 선택적 개인 페이지 내보내기 코드를 구현했다. 실제 OAuth 왕복 검증에는 Notion Developer Portal의 Public 연결 등록과 운영 비밀값 설정이 남아 있다. Anthropic 비밀값은 선택 사항으로 아직 등록하지 않았다.
+Cloudflare Workers + D1 기반 핵심 흐름과 선택적 Claude 분석을 운영 중이다. Notion Public OAuth 연결·해제, 암호화 토큰 저장, 확인된 거래의 선택적 개인 페이지 내보내기를 구현했다. Notion Public 연결과 운영 비밀값을 등록하고 실제 사용자 OAuth 왕복 및 D1 연결 저장을 검증했다. Anthropic 비밀값은 선택 사항으로 아직 등록하지 않았다.
 
 ## 현재 구현 상태
 
@@ -47,10 +47,11 @@ Cloudflare Workers + D1 기반 핵심 흐름과 선택적 Claude 분석을 운�
 - 초안 기한·게시 기한·입금 예정일을 거래별로 관리하는 일정 필드
 - Notion Public OAuth 연결·상태 확인·해제 API와 사용자별 암호화 토큰 저장
 - 확인 필요 상태를 제외한 거래의 선택적 Notion 개인 페이지 내보내기와 결과 링크 보관
+- 운영 Notion Public OAuth 승인·콜백·사용자별 암호화 연결 저장 검증 완료
 
 ## 다음 작업
 
-1. Notion Public 연결을 Developer Portal에 등록하고 운영 OAuth 왕복·거래 내보내기를 검증한다.
+1. OAuth 중 `Duepick 홈` 템플릿을 자동 복제하고 그 아래 거래 관리 데이터베이스로 내보내는 흐름을 구현·검증한다.
 2. Google Calendar에 초안·게시·입금 예정 일정을 만든다.
 3. Google Sheets 내보내기와 PDF/OCR 첨부 분석을 추가한다.
 
@@ -86,6 +87,8 @@ Resend 단계는 다음 조건을 만족하면 완료로 본다.
 - Notion OAuth 토큰은 D1에 평문으로 저장하지 않고 `JWT_SECRET`에서 파생한 AES-GCM 키로 암호화하며, 사용자가 연결을 해제하면 삭제한다.
 - Notion으로 자동 전송하지 않고 `확인 필요`가 아닌 거래만 사용자가 직접 내보낸다.
 - 운영 `APP_ORIGIN`의 첫 번째 값은 OAuth 콜백 기준이 되는 Duepick 운영 주소로 두고, 뒤에 로컬 개발 Origin을 함께 허용한다.
+- 정식 Notion 온보딩에서는 사용자가 빈 페이지를 미리 만들지 않는다. OAuth 템플릿 복제로 `Duepick 홈`과 사용 안내·거래 관리 데이터베이스·일정·수익 요약 구조를 기존 워크스페이스 안에 자동 생성한다.
+- Notion API로 새 워크스페이스 자체를 만들지는 않으며, 사용자가 선택한 기존 워크스페이스에 Duepick 구조를 만든다.
 
 ## 검증 명령
 
