@@ -81,11 +81,13 @@ Worker 단독 개발 시 프론트의 `frontend/.env.local`에 `VITE_API_BASE_UR
 | `JWT_SECRET` | 없음 | 운영 환경에서는 32자 이상의 임의 값 필수 |
 | `RESEND_API_KEY` | 없음 | 수신 메일 본문 조회용 API 키 |
 | `RESEND_WEBHOOK_SECRET` | 없음 | Resend 웹훅 서명 검증 키 |
+| `OPENAI_API_KEY` | 없음 | 선택적 Structured Outputs 제안 분석용 키 |
+| `OPENAI_MODEL` | `gpt-5.6-sol` | 제안 분석에 사용할 Responses API 모델 |
 | `RESEND_RECEIVING_DOMAIN` | `zenuuxdoeu.resend.app` | 사용자별 전달 주소의 수신 도메인 |
 | `APP_ORIGIN` | `http://localhost:5173` | 허용할 프론트엔드 Origin, 쉼표로 복수 지정 가능 |
 | `VITE_API_BASE_URL` | `/api` | 프론트의 API 기본 주소 |
 
-운영 D1 생성 후 `worker/wrangler.jsonc`의 `database_id`를 실제 ID로 교체합니다. 비밀값은 저장소에 커밋하지 않습니다.
+운영 D1 생성 후 `worker/wrangler.jsonc`의 `database_id`를 실제 ID로 교체합니다. R2에는 `duepick-evidence` 버킷이 필요합니다. 비밀값은 저장소에 커밋하지 않습니다. `OPENAI_API_KEY`가 없거나 AI 호출이 실패하면 규칙 기반 분석기가 계속 동작합니다.
 
 `main` 브랜치에 push하면 Cloudflare Workers Builds가 `worker` 디렉터리를 기준으로 프론트엔드와 Worker를 자동 배포합니다.
 
@@ -107,10 +109,9 @@ Content-Type: application/json
 
 외부 서비스는 핵심 도메인과 분리해 다음 순서로 연결합니다.
 
-1. 실패한 인바운드 처리의 상태 기록과 재시도 기능
+1. 운영 R2 버킷·D1 마이그레이션·Resend/OpenAI 비밀값 적용과 실환경 검증
 2. 분석 초안에서 작업물·체크리스트·위험 항목까지 편집하는 기능
-3. LLM Structured Output 분석 어댑터
-4. Notion Public OAuth/API로 거래 데이터베이스 등록
+3. Notion Public OAuth/API로 거래 데이터베이스 등록
 4. Google Calendar에 초안·게시·입금 일정을 생성
 5. Google Sheets 내보내기와 첨부 PDF/OCR 분석 추가
 

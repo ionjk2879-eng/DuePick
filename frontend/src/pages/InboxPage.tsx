@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { fetchInboxAddress, fetchInboxMessages, saveInboxMessage, updateInboxAnalysis, type InboxMessage } from '../api/inbox';
+import { fetchInboxAddress, fetchInboxMessages, retryInboxMessage, saveInboxMessage, updateInboxAnalysis, type InboxMessage } from '../api/inbox';
 import type { ProposalAnalysis } from '../api/proposal';
 
 export default function InboxPage() {
@@ -40,6 +40,13 @@ export default function InboxPage() {
     } finally {
       setSavingId(null);
     }
+  };
+
+  const retry = async (id: number) => {
+    setSavingId(id); setError(null);
+    try { await retryInboxMessage(id); await load(); }
+    catch { setError('메일 재처리에 실패했습니다. 잠시 후 다시 시도해주세요.'); }
+    finally { setSavingId(null); }
   };
 
   const startEditing = (message: InboxMessage) => {
@@ -86,7 +93,8 @@ export default function InboxPage() {
       <div className="stack">
         {messages.map((message) => (
           <article key={message.id} className="card message-card"><div className="message-summary">
-            <div className="message-top"><div><div className="message-subject">{message.subject || '제목 없음'}</div><p className="message-sender">{message.sender || '발신자 정보 없음'} · {new Date(message.createdAt).toLocaleDateString('ko-KR')}</p></div><span className={`badge ${message.status === 'SAVED' ? 'badge-saved' : 'badge-review'}`}>{message.status === 'SAVED' ? '거래 저장됨' : '확인 필요'}</span></div>
+            <div className="message-top"><div><div className="message-subject">{message.subject || '제목 없음'}</div><p className="message-sender">{message.sender || '발신자 정보 없음'} · {new Date(message.createdAt).toLocaleDateString('ko-KR')}</p></div><span className={`badge ${message.status === 'SAVED' ? 'badge-saved' : message.status === 'FAILED' ? 'badge-review' : 'badge-review'}`}>{message.status === 'SAVED' ? '거래 저장됨' : message.status === 'FAILED' ? '처리 실패' : '확인 필요'}</span></div>
+            {message.status === 'FAILED' && <div className="alert alert-error">메일을 분석하지 못했습니다. {message.errorMessage || '잠시 후 다시 시도해주세요.'} · 시도 {message.attemptCount}회</div>}
             {editingId === message.id && draft ? (
               <div className="edit-panel" style={{ margin: '18px -22px -20px' }}><div className="form-grid">
                 <label className="field"><span className="field-label">거래처</span><input value={draft.client ?? ''} onChange={(event) => updateDraft('client', event.target.value || null)} /></label>
@@ -101,12 +109,12 @@ export default function InboxPage() {
             ) : (
               <><div className="message-analysis"><div className="analysis-value"><small>거래처</small><strong>{message.analysis.client || '확인 필요'}</strong></div><div className="analysis-value"><small>제안 금액</small><strong>{message.analysis.amount == null ? '확인 필요' : `${message.analysis.amount.toLocaleString()}원`}</strong></div></div>{!!message.analysis.risks.length && <div className="alert alert-warning">확인 항목 · {message.analysis.risks.join(' · ')}</div>}</>
             )}
-            <div className="action-row">
+            {message.status === 'FAILED' ? <div className="action-row"><button className="btn btn-primary" onClick={() => void retry(message.id)} disabled={savingId === message.id}>{savingId === message.id ? '재처리 중…' : '메일 재처리'}</button></div> : <div className="action-row">
               <button className="btn btn-secondary" onClick={() => startEditing(message)} disabled={message.status === 'SAVED' || editingId === message.id}>분석 수정</button>
               <button className="btn btn-primary" onClick={() => void saveAsDeal(message.id)} disabled={message.status === 'SAVED' || savingId === message.id || editingId === message.id}>
                 {message.status === 'SAVED' ? '거래 저장됨' : savingId === message.id ? '저장 중…' : '이 분석으로 거래 저장'}
               </button>
-            </div>
+            </div>}
           </div></article>
         ))}
       </div>

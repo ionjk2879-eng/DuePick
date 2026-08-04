@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { analyzeProposal, type ProposalAnalysis } from './analyze';
+import { analyzeWithAdapter } from './llm';
 import { body, dealResponse, expenseResponse, getUser, subscriptionResponse, type AppContext } from './helpers';
 import { createToken, hashPassword, randomToken, verifyPassword, verifyToken } from './security';
 import type { Env, UserRow, Variables } from './types';
@@ -111,7 +112,7 @@ app.post('/api/proposals/preview', async (c) => {
   const input = await body<{ text?: string }>(c as AppContext);
   if (!input.text?.trim()) return c.json({ message: '제안 내용을 입력해주세요.' }, 400);
   if (input.text.length > 20_000) return c.json({ message: '제안 내용은 20,000자 이하여야 합니다.' }, 400);
-  return c.json(analyzeProposal(input.text));
+  return c.json(await analyzeWithAdapter(input.text, c.env));
 });
 
 app.get('/api/deals', async (c) => {
@@ -159,10 +160,59 @@ app.post('/api/expenses', async (c) => saveExpense(c as AppContext));
 app.put('/api/expenses/:id', async (c) => saveExpense(c as AppContext, Number(c.req.param('id'))));
 
 app.delete('/api/expenses/:id', async (c) => {
+  const expense = await c.env.DB.prepare('SELECT evidence_object_key FROM expenses WHERE id = ? AND user_id = ?')
+    .bind(Number(c.req.param('id')), getUser(c as AppContext).id).first<{ evidence_object_key: string | null }>();
   const result = await c.env.DB.prepare('DELETE FROM expenses WHERE id = ? AND user_id = ?')
     .bind(Number(c.req.param('id')), getUser(c as AppContext).id).run();
   if (!result.meta.changes) return c.json({ message: '비용 내역을 찾을 수 없습니다.' }, 404);
+  if (expense?.evidence_object_key && c.env.EVIDENCE_BUCKET) {
+    try { await c.env.EVIDENCE_BUCKET.delete(expense.evidence_object_key); }
+    catch { console.error('삭제된 비용의 R2 증빙 정리에 실패했습니다.'); }
+  }
   return c.body(null, 204);
+});
+
+app.put('/api/expenses/:id/evidence', async (c) => {
+  if (!c.env.EVIDENCE_BUCKET) return c.json({ message: 'R2 증빙 저장소가 설정되지 않았습니다.' }, 503);
+  const user = getUser(c as AppContext);
+  const expenseId = Number(c.req.param('id'));
+  const expense = await c.env.DB.prepare('SELECT evidence_object_key FROM expenses WHERE id = ? AND user_id = ?')
+    .bind(expenseId, user.id).first<{ evidence_object_key: string | null }>();
+  if (!expense) return c.json({ message: '비용 내역을 찾을 수 없습니다.' }, 404);
+  const form = await c.req.formData();
+  const file = form.get('file');
+  if (!(file instanceof File)) return c.json({ message: '업로드할 증빙 파일이 필요합니다.' }, 400);
+  const allowed = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+  if (!allowed.includes(file.type)) return c.json({ message: 'PDF, JPG, PNG, WEBP 증빙만 업로드할 수 있습니다.' }, 400);
+  if (file.size <= 0 || file.size > 10 * 1024 * 1024) return c.json({ message: '증빙 파일은 10MB 이하여야 합니다.' }, 400);
+  const objectKey = `users/${user.id}/expenses/${expenseId}/${crypto.randomUUID()}`;
+  await c.env.EVIDENCE_BUCKET.put(objectKey, file.stream(), {
+    httpMetadata: { contentType: file.type }, customMetadata: { userId: String(user.id), expenseId: String(expenseId) },
+  });
+  await c.env.DB.prepare(`UPDATE expenses SET evidence_object_key = ?, evidence_file_name = ?, evidence_content_type = ?, evidence_size = ?, evidence_url = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`)
+    .bind(objectKey, file.name.slice(0, 240), file.type, file.size, expenseId, user.id).run();
+  if (expense.evidence_object_key) {
+    try { await c.env.EVIDENCE_BUCKET.delete(expense.evidence_object_key); }
+    catch { console.error('교체된 이전 R2 증빙 정리에 실패했습니다.'); }
+  }
+  const row = await c.env.DB.prepare(`SELECT e.*, d.client AS deal_client FROM expenses e LEFT JOIN deals d ON d.id = e.deal_id WHERE e.id = ? AND e.user_id = ?`).bind(expenseId, user.id).first<Record<string, unknown>>();
+  return c.json(expenseResponse(row!));
+});
+
+app.get('/api/expenses/:id/evidence', async (c) => {
+  if (!c.env.EVIDENCE_BUCKET) return c.json({ message: 'R2 증빙 저장소가 설정되지 않았습니다.' }, 503);
+  const row = await c.env.DB.prepare('SELECT evidence_object_key, evidence_file_name, evidence_content_type FROM expenses WHERE id = ? AND user_id = ?')
+    .bind(Number(c.req.param('id')), getUser(c as AppContext).id)
+    .first<{ evidence_object_key: string | null; evidence_file_name: string | null; evidence_content_type: string | null }>();
+  if (!row?.evidence_object_key) return c.json({ message: '증빙 파일을 찾을 수 없습니다.' }, 404);
+  const object = await c.env.EVIDENCE_BUCKET.get(row.evidence_object_key);
+  if (!object) return c.json({ message: '증빙 파일을 찾을 수 없습니다.' }, 404);
+  const fileName = (row.evidence_file_name || 'evidence').replace(/[\r\n]/g, '');
+  return new Response(object.body, { headers: {
+    'Content-Type': row.evidence_content_type || object.httpMetadata?.contentType || 'application/octet-stream',
+    'Content-Length': String(object.size), 'Cache-Control': 'private, no-store',
+    'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+  } });
 });
 
 app.get('/api/finance/summary', async (c) => {
@@ -201,10 +251,30 @@ app.post('/api/plans/upgrade', async (c) => {
 app.get('/api/inbox', async (c) => c.json({ address: `inbox-${getUser(c as AppContext).inbox_token}@${c.env.RESEND_RECEIVING_DOMAIN}` }));
 
 app.get('/api/inbox/messages', async (c) => {
-  const rows = await c.env.DB.prepare('SELECT id, sender, recipient, subject, analysis, status, created_at FROM inbound_emails WHERE user_id = ? ORDER BY created_at DESC')
+  const rows = await c.env.DB.prepare('SELECT id, sender, recipient, subject, analysis, status, error_message, attempt_count, last_attempt_at, created_at FROM inbound_emails WHERE user_id = ? ORDER BY created_at DESC')
     .bind(getUser(c as AppContext).id).all();
   return c.json(rows.results.map((row) => ({ id: row.id, sender: row.sender, recipient: row.recipient,
-    subject: row.subject, analysis: JSON.parse(String(row.analysis)), status: row.status, createdAt: row.created_at })));
+    subject: row.subject, analysis: JSON.parse(String(row.analysis)), status: row.status,
+    errorMessage: row.error_message, attemptCount: row.attempt_count, lastAttemptAt: row.last_attempt_at, createdAt: row.created_at })));
+});
+
+app.post('/api/inbox/messages/:id/retry', async (c) => {
+  if (!c.env.RESEND_API_KEY) return c.json({ message: 'Resend API 키가 설정되지 않았습니다.' }, 503);
+  const user = getUser(c as AppContext);
+  const row = await c.env.DB.prepare('SELECT id, resend_email_id, status FROM inbound_emails WHERE id = ? AND user_id = ?')
+    .bind(Number(c.req.param('id')), user.id).first<{ id: number; resend_email_id: string; status: string }>();
+  if (!row) return c.json({ message: '수신 메일을 찾을 수 없습니다.' }, 404);
+  if (row.status !== 'FAILED') return c.json({ message: '실패 상태의 메일만 재시도할 수 있습니다.' }, 409);
+  try {
+    const processed = await receiveEmail(row.resend_email_id, c.env);
+    await c.env.DB.prepare(`UPDATE inbound_emails SET sender = ?, subject = ?, text_body = ?, analysis = ?, status = 'REVIEW', error_message = NULL, attempt_count = attempt_count + 1, last_attempt_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`)
+      .bind(processed.sender, processed.subject, processed.text, JSON.stringify(processed.analysis), row.id, user.id).run();
+    return c.json({ received: true });
+  } catch (error) {
+    await c.env.DB.prepare(`UPDATE inbound_emails SET error_message = ?, attempt_count = attempt_count + 1, last_attempt_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`)
+      .bind(safeInboundError(error), row.id, user.id).run();
+    return c.json({ message: '메일 재처리에 실패했습니다. 잠시 후 다시 시도해주세요.' }, 502);
+  }
 });
 
 app.patch('/api/inbox/messages/:id/analysis', async (c) => {
@@ -275,19 +345,22 @@ app.post('/api/webhooks/resend', async (c) => {
   const token = recipient?.split('@')[0].replace(/^inbox-/, '');
   const user = token ? await c.env.DB.prepare('SELECT id FROM users WHERE inbox_token = ?').bind(token).first<{ id: number }>() : null;
   if (!user || !recipient) return c.json({ received: true, ignored: 'unknown_recipient' });
-  const response = await fetch(`https://api.resend.com/emails/receiving/${encodeURIComponent(event.data.email_id)}`, {
-    headers: { Authorization: `Bearer ${c.env.RESEND_API_KEY}`, 'User-Agent': 'duepick-worker/1.0' },
-  });
-  if (!response.ok) throw new Error(`Resend 본문 조회 실패 (${response.status})`);
-  const email = await response.json<{ text?: string | null; html?: string | null; from?: string; subject?: string }>();
-  const text = email.text?.trim() || stripHtml(email.html ?? '');
-  const analysis = analyzeProposal(text);
-  await c.env.DB.prepare(`INSERT INTO inbound_emails
-    (user_id, resend_email_id, svix_id, sender, recipient, subject, text_body, analysis)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-    .bind(user.id, event.data.email_id, svixId, email.from ?? event.data.from ?? null, recipient,
-      email.subject ?? event.data.subject ?? null, text, JSON.stringify(analysis)).run();
-  return c.json({ received: true });
+  try {
+    const processed = await receiveEmail(event.data.email_id, c.env);
+    await c.env.DB.prepare(`INSERT INTO inbound_emails
+      (user_id, resend_email_id, svix_id, sender, recipient, subject, text_body, analysis, last_attempt_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`)
+      .bind(user.id, event.data.email_id, svixId, processed.sender ?? event.data.from ?? null, recipient,
+        processed.subject ?? event.data.subject ?? null, processed.text, JSON.stringify(processed.analysis)).run();
+    return c.json({ received: true });
+  } catch (error) {
+    await c.env.DB.prepare(`INSERT INTO inbound_emails
+      (user_id, resend_email_id, svix_id, sender, recipient, subject, text_body, analysis, status, error_message, last_attempt_at)
+      VALUES (?, ?, ?, ?, ?, ?, '', ?, 'FAILED', ?, CURRENT_TIMESTAMP)`)
+      .bind(user.id, event.data.email_id, svixId, event.data.from ?? null, recipient, event.data.subject ?? null,
+        JSON.stringify(analyzeProposal('')), safeInboundError(error)).run();
+    return c.json({ received: true, status: 'FAILED' }, 202);
+  }
 });
 
 app.get('/api/reports/subscriptions/csv', async (c) => {
@@ -368,6 +441,22 @@ function stripHtml(html: string): string {
     .replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n').replace(/<[^>]+>/g, ' ')
     .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
     .replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+async function receiveEmail(emailId: string, env: Env) {
+  const response = await fetch(`https://api.resend.com/emails/receiving/${encodeURIComponent(emailId)}`, {
+    headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'User-Agent': 'duepick-worker/1.0' },
+  });
+  if (!response.ok) throw new Error(`Resend 본문 조회 실패 (${response.status})`);
+  const email = await response.json<{ text?: string | null; html?: string | null; from?: string; subject?: string }>();
+  const text = email.text?.trim() || stripHtml(email.html ?? '');
+  if (!text) throw new Error('메일 본문이 비어 있습니다.');
+  return { sender: email.from ?? null, subject: email.subject ?? null, text, analysis: await analyzeWithAdapter(text, env) };
+}
+
+function safeInboundError(error: unknown): string {
+  const message = error instanceof Error ? error.message : '알 수 없는 수신 오류';
+  return message.replace(/[\r\n]/g, ' ').slice(0, 300);
 }
 
 async function verifyWebhook(payload: string, headers: Headers, secret: string): Promise<boolean> {

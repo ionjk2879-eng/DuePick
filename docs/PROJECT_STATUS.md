@@ -1,12 +1,12 @@
 # Duepick 프로젝트 상태
 
-마지막 확인일: 2026-08-03
+마지막 확인일: 2026-08-04
 
 ## 현재 단계
 
-**Cloudflare 전환 및 3단계 기본 구현 완료**
+**Cloudflare 전환 및 운영 안정화·증빙 업로드·AI 분석 어댑터 구현 완료**
 
-Cloudflare Workers + D1 기반으로 전환했으며, 직접 붙여넣기와 사용자별 Resend 전달 주소를 지원한다. 인바운드 메일은 분석 초안으로만 저장되고 자동으로 거래 확정되지 않는다. 실제 Resend 웹훅 등록과 운영 배포는 아직 필요하다.
+Cloudflare Workers + D1 기반으로 전환했으며, 직접 붙여넣기와 사용자별 Resend 전달 주소를 지원한다. 인바운드 메일은 분석 초안으로만 저장되고 자동으로 거래 확정되지 않는다. 실패 상태와 사용자별 재처리, R2 증빙 업로드, 선택적 OpenAI Structured Outputs 분석을 구현했다. 운영 `duepick-evidence` R2 버킷 생성과 D1 `0004_inbound_evidence.sql` 적용을 완료했다. Resend 비밀값은 등록되어 있으며 OpenAI 비밀값은 선택 사항으로 아직 등록하지 않았다.
 
 ## 현재 구현 상태
 
@@ -36,15 +36,20 @@ Cloudflare Workers + D1 기반으로 전환했으며, 직접 붙여넣기와 사
 - 입금 완료 거래와 일반 비용을 연결하는 재무 장부
 - 업무 사용 비율·증빙 링크·공제 검토 상태 및 최근 6개월 손익
 - 수입·비용 통합 신고 준비용 CSV
+- 실패한 인바운드 이벤트의 오류·시도 횟수 기록과 사용자별 재처리
+- Cloudflare R2 기반 PDF·이미지 증빙 업로드, 인증 다운로드와 비용 삭제 시 정리
+- OpenAI Responses API의 JSON Schema Structured Outputs 분석 어댑터
+- OpenAI API 키가 없거나 분석 호출이 실패할 때 규칙 기반 분석기로 자동 복귀
 
 ## 다음 작업
 
-1. 실패한 인바운드 이벤트의 상태 기록과 관리자 재시도를 추가한다.
-2. 규칙 기반 분석기를 교체 또는 보완할 LLM Structured Output 어댑터를 추가한다.
-3. Notion Public OAuth/API로 확인된 거래를 등록한다.
-4. Google Calendar에 초안·게시·입금 예정 일정을 만든다.
-5. Google Sheets 내보내기와 PDF/OCR 첨부 분석을 추가한다.
-6. Cloudflare R2를 연결해 증빙 파일 자체 업로드를 지원한다.
+1. 변경 코드를 운영 배포하고 실제 R2 증빙 업로드·다운로드·교체·삭제를 검증한다.
+2. 실제 Resend 웹훅에서 성공·실패·재처리 흐름을 운영 검증한다.
+3. `OPENAI_API_KEY`를 등록한 뒤 실제 Structured Outputs 응답과 fallback을 검증한다.
+4. 분석 초안에서 작업물·체크리스트·위험 항목까지 편집하도록 확장한다.
+5. Notion Public OAuth/API로 확인된 거래를 등록한다.
+6. Google Calendar에 초안·게시·입금 예정 일정을 만든다.
+7. Google Sheets 내보내기와 PDF/OCR 첨부 분석을 추가한다.
 
 ## 다음 작업의 완료 조건
 
@@ -70,6 +75,9 @@ Resend 단계는 다음 조건을 만족하면 완료로 본다.
 - 첫 입력 방식은 직접 붙여넣기이며, 다음 입력 방식은 전용 전달 주소다.
 - 분석 결과는 항상 사용자 확인 후 거래로 확정한다.
 - 찾지 못한 계약 조건을 AI가 임의로 채우지 않는다.
+- 실패한 인바운드 재시도는 별도 관리자 역할이 생기기 전까지 해당 메일 소유 사용자에게만 허용한다.
+- R2 증빙은 공개 URL을 만들지 않고 JWT 인증 API를 통해서만 내려받는다. PDF·JPG·PNG·WEBP, 파일당 10MB로 제한한다.
+- `OPENAI_API_KEY`가 있을 때 Responses API Structured Outputs를 사용하고, 키가 없거나 호출이 실패하면 규칙 기반 분석기로 복귀한다.
 
 ## 검증 명령
 

@@ -20,5 +20,11 @@
       "database_id": "f1a8bfb8-b597-4cb2-975f-65a0d52133db",
       "migrations_dir": "migrations"
     }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "EVIDENCE_BUCKET",
+      "bucket_name": "duepick-evidence"
+    }
   ]
 }

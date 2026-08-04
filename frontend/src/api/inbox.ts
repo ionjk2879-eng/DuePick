@@ -8,6 +8,9 @@ export interface InboxMessage {
   subject: string | null;
   analysis: ProposalAnalysis;
   status: 'REVIEW' | 'SAVED' | 'FAILED';
+  errorMessage: string | null;
+  attemptCount: number;
+  lastAttemptAt: string | null;
   createdAt: string;
 }
 
@@ -25,4 +28,8 @@ export async function saveInboxMessage(id: number): Promise<void> {
 
 export async function updateInboxAnalysis(id: number, analysis: ProposalAnalysis): Promise<ProposalAnalysis> {
   return (await apiClient.patch<ProposalAnalysis>(`/inbox/messages/${id}/analysis`, analysis)).data;
+}
+
+export async function retryInboxMessage(id: number): Promise<void> {
+  await apiClient.post(`/inbox/messages/${id}/retry`);
 }

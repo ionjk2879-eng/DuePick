@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { isAxiosError } from 'axios';
 import { fetchDeals, type Deal } from '../api/deals';
-import { createExpense, deleteExpense, downloadFinanceCsv, fetchExpenses, fetchFinanceSummary, type DeductionStatus, type EvidenceType, type Expense, type FinanceSummary } from '../api/finance';
+import { createExpense, deleteExpense, downloadExpenseEvidence, downloadFinanceCsv, fetchExpenses, fetchFinanceSummary, uploadExpenseEvidence, type DeductionStatus, type EvidenceType, type Expense, type FinanceSummary } from '../api/finance';
 import { createSubscription, deleteSubscription, fetchSubscriptions } from '../api/subscriptions';
 import { suggestCategory } from '../api/suggestion';
 import type { BillingCycle, Subscription, UsageType } from '../types';
@@ -30,6 +30,7 @@ export default function DashboardPage() {
   const [expenseUsage, setExpenseUsage] = useState<UsageType>('BUSINESS'); const [businessRatio, setBusinessRatio] = useState('100');
   const [dealId, setDealId] = useState(''); const [paymentMethod, setPaymentMethod] = useState('');
   const [evidenceType, setEvidenceType] = useState<EvidenceType>('NONE'); const [evidenceUrl, setEvidenceUrl] = useState('');
+  const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
   const [deductionStatus, setDeductionStatus] = useState<DeductionStatus>('REVIEW'); const [note, setNote] = useState('');
 
   const [serviceName, setServiceName] = useState(''); const [subscriptionAmount, setSubscriptionAmount] = useState('');
@@ -55,10 +56,14 @@ export default function DashboardPage() {
   const addExpense = async (event: FormEvent) => {
     event.preventDefault(); setError(null); setSaving(true);
     try {
-      await createExpense({ title, amount: Number(expenseAmount), expenseDate, category, usageType: expenseUsage,
+      const created = await createExpense({ title, amount: Number(expenseAmount), expenseDate, category, usageType: expenseUsage,
         businessRatio: expenseUsage === 'BUSINESS' ? Number(businessRatio) : 0, dealId: dealId ? Number(dealId) : null,
         paymentMethod, evidenceType, evidenceUrl, deductionStatus, note });
-      setTitle(''); setExpenseAmount(''); setCategory(''); setDealId(''); setPaymentMethod(''); setEvidenceType('NONE'); setEvidenceUrl(''); setDeductionStatus('REVIEW'); setNote('');
+      if (evidenceFile) {
+        try { await uploadExpenseEvidence(created.id, evidenceFile); }
+        catch (caught) { setError(`${errorText(caught, '증빙 파일 업로드에 실패했습니다.')} 비용 내역은 저장되었습니다.`); }
+      }
+      setTitle(''); setExpenseAmount(''); setCategory(''); setDealId(''); setPaymentMethod(''); setEvidenceType('NONE'); setEvidenceUrl(''); setEvidenceFile(null); setDeductionStatus('REVIEW'); setNote('');
       await reload();
     } catch (caught) { setError(errorText(caught, '비용 등록에 실패했습니다.')); } finally { setSaving(false); }
   };
@@ -72,6 +77,16 @@ export default function DashboardPage() {
   };
 
   const removeExpense = async (id: number) => { if (!confirm('이 비용 내역을 삭제할까요?')) return; await deleteExpense(id); await reload(); };
+  const replaceEvidence = async (id: number, file: File | undefined) => {
+    if (!file) return; setError(null);
+    try { await uploadExpenseEvidence(id, file); await reload(); }
+    catch (caught) { setError(errorText(caught, '증빙 파일 업로드에 실패했습니다.')); }
+  };
+  const downloadEvidence = async (expense: Expense) => {
+    setError(null);
+    try { await downloadExpenseEvidence(expense); }
+    catch (caught) { setError(errorText(caught, '증빙 파일을 내려받지 못했습니다.')); }
+  };
   const removeSubscription = async (id: number) => { if (!confirm('이 구독을 삭제할까요?')) return; await deleteSubscription(id); await reload(); };
   const exportCsv = async () => { setDownloading(true); try { await downloadFinanceCsv(); } finally { setDownloading(false); } };
 
@@ -95,12 +110,12 @@ export default function DashboardPage() {
           <div className="form-grid"><label className="field"><span className="field-label">비용명</span><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="예: 촬영 소품" required /></label><label className="field"><span className="field-label">금액</span><input type="number" min="0" value={expenseAmount} onChange={(e) => setExpenseAmount(e.target.value)} required /></label></div>
           <div className="expense-form-grid"><label className="field"><span className="field-label">사용일</span><input type="date" value={expenseDate} onChange={(e) => setExpenseDate(e.target.value)} required /></label><label className="field"><span className="field-label">계정과목</span><input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="예: 소모품비" required /></label><label className="field"><span className="field-label">사용 구분</span><select value={expenseUsage} onChange={(e) => setExpenseUsage(e.target.value as UsageType)}><option value="BUSINESS">업무용</option><option value="PERSONAL">개인용</option></select></label><label className="field"><span className="field-label">업무 사용 비율</span><input type="number" min="0" max="100" value={businessRatio} disabled={expenseUsage === 'PERSONAL'} onChange={(e) => setBusinessRatio(e.target.value)} /></label></div>
           <div className="form-grid"><label className="field"><span className="field-label">관련 거래</span><select value={dealId} onChange={(e) => setDealId(e.target.value)}><option value="">공통 비용 / 연결 안 함</option>{deals.map((deal) => <option key={deal.id} value={deal.id}>{deal.client ?? '거래처 미정'} · {(deal.amount ?? 0).toLocaleString()}원</option>)}</select></label><label className="field"><span className="field-label">결제수단</span><input value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} placeholder="예: 사업용 카드" /></label></div>
-          <div className="expense-form-grid"><label className="field"><span className="field-label">증빙</span><select value={evidenceType} onChange={(e) => setEvidenceType(e.target.value as EvidenceType)}>{Object.entries(evidenceLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="field expense-url"><span className="field-label">증빙 파일 링크</span><input type="url" value={evidenceUrl} onChange={(e) => setEvidenceUrl(e.target.value)} placeholder="Drive·Dropbox 등의 공유 링크" /></label><label className="field"><span className="field-label">공제 검토</span><select value={deductionStatus} onChange={(e) => setDeductionStatus(e.target.value as DeductionStatus)}>{Object.entries(deductionLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label></div>
+          <div className="expense-form-grid"><label className="field"><span className="field-label">증빙</span><select value={evidenceType} onChange={(e) => setEvidenceType(e.target.value as EvidenceType)}>{Object.entries(evidenceLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="field expense-url"><span className="field-label">증빙 파일</span><input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={(e) => setEvidenceFile(e.target.files?.[0] ?? null)} /><small className="helper">PDF·JPG·PNG·WEBP, 최대 10MB</small></label><label className="field"><span className="field-label">외부 증빙 링크 (선택)</span><input type="url" value={evidenceUrl} onChange={(e) => setEvidenceUrl(e.target.value)} placeholder="https://" disabled={Boolean(evidenceFile)} /></label><label className="field"><span className="field-label">공제 검토</span><select value={deductionStatus} onChange={(e) => setDeductionStatus(e.target.value as DeductionStatus)}>{Object.entries(deductionLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label></div>
           <label className="field"><span className="field-label">메모</span><input value={note} onChange={(e) => setNote(e.target.value)} placeholder="업무 관련성과 사용 목적을 기록하세요" /></label><div className="action-row"><button className="btn btn-primary" disabled={saving}>{saving ? '저장 중…' : '비용 저장'}</button></div>
         </form>
       </section>
 
-      <section className="card" style={{ marginTop: 20 }}><div className="card-header"><div><h2 className="card-title">비용 장부</h2><p className="card-copy">업무 사용 비율이 손익과 공제 후보 금액에 반영됩니다.</p></div></div><div className="card-body"><div className="table-wrap"><table className="data-table"><thead><tr><th>사용일</th><th>항목</th><th>금액</th><th>분류</th><th>연결 거래</th><th>증빙</th><th>공제 검토</th><th></th></tr></thead><tbody>{expenses.map((expense) => <tr key={expense.id}><td>{expense.expenseDate}</td><td>{expense.title}</td><td>{expense.amount.toLocaleString()}원 <small>({expense.businessRatio}%)</small></td><td>{expense.category}</td><td>{expense.dealClient ?? '공통 비용'}</td><td>{expense.evidenceUrl ? <a href={expense.evidenceUrl} target="_blank" rel="noreferrer">{evidenceLabels[expense.evidenceType]}</a> : evidenceLabels[expense.evidenceType]}</td><td><span className={`badge badge-${expense.deductionStatus.toLowerCase()}`}>{deductionLabels[expense.deductionStatus]}</span></td><td><button className="btn btn-danger btn-sm" onClick={() => removeExpense(expense.id)}>삭제</button></td></tr>)}</tbody></table>{!expenses.length && <p className="helper table-empty">아직 등록된 일반 비용이 없습니다.</p>}</div></div></section>
+      <section className="card" style={{ marginTop: 20 }}><div className="card-header"><div><h2 className="card-title">비용 장부</h2><p className="card-copy">업무 사용 비율이 손익과 공제 후보 금액에 반영됩니다.</p></div></div><div className="card-body"><div className="table-wrap"><table className="data-table"><thead><tr><th>사용일</th><th>항목</th><th>금액</th><th>분류</th><th>연결 거래</th><th>증빙</th><th>공제 검토</th><th></th></tr></thead><tbody>{expenses.map((expense) => <tr key={expense.id}><td>{expense.expenseDate}</td><td>{expense.title}</td><td>{expense.amount.toLocaleString()}원 <small>({expense.businessRatio}%)</small></td><td>{expense.category}</td><td>{expense.dealClient ?? '공통 비용'}</td><td><div className="action-row">{expense.hasEvidenceFile ? <button type="button" className="btn btn-secondary btn-sm" onClick={() => void downloadEvidence(expense)}>{expense.evidenceFileName || evidenceLabels[expense.evidenceType]}</button> : expense.evidenceUrl ? <a href={expense.evidenceUrl} target="_blank" rel="noreferrer">{evidenceLabels[expense.evidenceType]}</a> : <span>{evidenceLabels[expense.evidenceType]}</span>}<label className="btn btn-secondary btn-sm">{expense.hasEvidenceFile ? '교체' : '업로드'}<input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" style={{ display: 'none' }} onChange={(e) => void replaceEvidence(expense.id, e.target.files?.[0])} /></label></div></td><td><span className={`badge badge-${expense.deductionStatus.toLowerCase()}`}>{deductionLabels[expense.deductionStatus]}</span></td><td><button className="btn btn-danger btn-sm" onClick={() => removeExpense(expense.id)}>삭제</button></td></tr>)}</tbody></table>{!expenses.length && <p className="helper table-empty">아직 등록된 일반 비용이 없습니다.</p>}</div></div></section>
 
       <section className="card card-body" style={{ marginTop: 20 }}><div className="card-header flush-header"><div><h2 className="card-title">반복 구독 비용</h2><p className="card-copy">기존 핀포인트 구독 데이터입니다. 실제 결제 장부와 구분해 월 예상 비용으로 표시합니다.</p></div></div><SubscriptionForm serviceName={serviceName} amount={subscriptionAmount} billingCycle={billingCycle} usageType={subscriptionUsage} accountingCategory={accountingCategory} suggestionNote={suggestionNote} suggestionMatched={suggestionMatched} onServiceNameChange={setServiceName} onAmountChange={setSubscriptionAmount} onBillingCycleChange={setBillingCycle} onUsageTypeChange={setSubscriptionUsage} onAccountingCategoryChange={setAccountingCategory} onSubmit={addSubscription} /></section>
       <section className="card" style={{ marginTop: 20 }}><div className="card-header"><div><h2 className="card-title">구독 목록</h2><p className="card-copy">업무용과 개인용 반복 비용을 함께 관리합니다.</p></div></div><div className="card-body"><SubscriptionTable subscriptions={subscriptions} onDelete={removeSubscription} /></div></section>

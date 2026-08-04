@@ -24,6 +24,8 @@ export function expenseResponse(row: Record<string, unknown>) {
     amount: row.amount, expenseDate: row.expense_date, category: row.category,
     usageType: row.usage_type, businessRatio: row.business_ratio, paymentMethod: row.payment_method,
     evidenceType: row.evidence_type, evidenceUrl: row.evidence_url,
+    evidenceFileName: row.evidence_file_name, evidenceContentType: row.evidence_content_type,
+    evidenceSize: row.evidence_size, hasEvidenceFile: Boolean(row.evidence_object_key),
     deductionStatus: row.deduction_status, note: row.note, createdAt: row.created_at };
 }
 
