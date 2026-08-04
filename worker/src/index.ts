@@ -17,7 +17,7 @@ app.use('*', async (c, next) => cors({
 })(c, next));
 
 app.use('/api/*', async (c, next) => {
-  if (c.req.path.startsWith('/api/auth/') || c.req.path === '/api/webhooks/resend' || c.req.method === 'OPTIONS') return next();
+  if (c.req.path.startsWith('/api/auth/') || c.req.path === '/api/health' || c.req.path === '/api/webhooks/resend' || c.req.method === 'OPTIONS') return next();
   const authorization = c.req.header('Authorization');
   const userId = authorization?.startsWith('Bearer ') ? await verifyToken(authorization.slice(7), c.env.JWT_SECRET) : null;
   if (!userId) return c.json({ message: '로그인이 필요합니다.' }, 401);

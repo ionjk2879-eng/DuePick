@@ -6,7 +6,7 @@
 
 **Cloudflare 전환 및 운영 안정화·증빙 업로드·AI 분석 어댑터 구현 완료**
 
-Cloudflare Workers + D1 기반으로 전환했으며, 직접 붙여넣기와 사용자별 Resend 전달 주소를 지원한다. 인바운드 메일은 분석 초안으로만 저장되고 자동으로 거래 확정되지 않는다. 실패 상태와 사용자별 재처리, R2 증빙 업로드, 선택적 OpenAI Structured Outputs 분석을 구현했다. 운영 `duepick-evidence` R2 버킷 생성과 D1 `0004_inbound_evidence.sql` 적용을 완료했다. Resend 비밀값은 등록되어 있으며 OpenAI 비밀값은 선택 사항으로 아직 등록하지 않았다.
+Cloudflare Workers + D1 기반으로 전환했으며, 직접 붙여넣기와 사용자별 Resend 전달 주소를 지원한다. 인바운드 메일은 분석 초안으로만 저장되고 자동으로 거래 확정되지 않는다. 실패 상태와 사용자별 재처리, R2 증빙 업로드, 선택적 OpenAI Structured Outputs 분석을 구현하고 운영 배포했다. 운영 `duepick-evidence` R2 버킷 생성과 D1 `0004_inbound_evidence.sql` 적용을 완료했다. Resend 비밀값은 등록되어 있으며 OpenAI 비밀값은 선택 사항으로 아직 등록하지 않았다.
 
 ## 현재 구현 상태
 
@@ -43,7 +43,7 @@ Cloudflare Workers + D1 기반으로 전환했으며, 직접 붙여넣기와 사
 
 ## 다음 작업
 
-1. 변경 코드를 운영 배포하고 실제 R2 증빙 업로드·다운로드·교체·삭제를 검증한다.
+1. 로그인 사용자로 실제 R2 증빙 업로드·다운로드·교체·삭제를 검증한다.
 2. 실제 Resend 웹훅에서 성공·실패·재처리 흐름을 운영 검증한다.
 3. `OPENAI_API_KEY`를 등록한 뒤 실제 Structured Outputs 응답과 fallback을 검증한다.
 4. 분석 초안에서 작업물·체크리스트·위험 항목까지 편집하도록 확장한다.
