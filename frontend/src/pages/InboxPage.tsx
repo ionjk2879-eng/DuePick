@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { fetchInboxAddress, fetchInboxMessages, retryInboxMessage, saveInboxMessage, updateInboxAnalysis, type InboxMessage } from '../api/inbox';
 import type { ProposalAnalysis } from '../api/proposal';
 
+const splitLines = (value: string) => value.split('\n').map((item) => item.trim()).filter(Boolean);
+
 export default function InboxPage() {
   const [address, setAddress] = useState('');
   const [messages, setMessages] = useState<InboxMessage[]>([]);
@@ -105,6 +107,10 @@ export default function InboxPage() {
                 <label className="field"><span className="field-label">게시 기한</span><input type="date" value={draft.publishDueDate ?? ''} onChange={(event) => updateDraft('publishDueDate', event.target.value || null)} /></label>
                 <label className="field"><span className="field-label">2차 사용</span><input value={draft.secondaryUsage ?? ''} onChange={(event) => updateDraft('secondaryUsage', event.target.value || null)} /></label>
                 <label className="field"><span className="field-label">지급 조건</span><input value={draft.paymentCondition ?? ''} onChange={(event) => updateDraft('paymentCondition', event.target.value || null)} /></label>
+              </div><div className="stack" style={{ marginTop: 14 }}>
+                <label className="field"><span className="field-label">작업물</span><textarea rows={3} maxLength={5000} value={draft.deliverables.join('\n')} onChange={(event) => updateDraft('deliverables', splitLines(event.target.value))} placeholder="한 줄에 하나씩 입력하세요" /></label>
+                <label className="field"><span className="field-label">작업 체크리스트</span><textarea rows={4} maxLength={5000} value={draft.tasks.join('\n')} onChange={(event) => updateDraft('tasks', splitLines(event.target.value))} placeholder="한 줄에 하나씩 입력하세요" /></label>
+                <label className="field"><span className="field-label">위험·확인 항목</span><textarea rows={4} maxLength={5000} value={draft.risks.join('\n')} onChange={(event) => updateDraft('risks', splitLines(event.target.value))} placeholder="한 줄에 하나씩 입력하세요" /></label>
               </div><div className="action-row" style={{ marginTop: 14 }}><button className="btn btn-primary" onClick={() => void saveDraft()} disabled={savingId === message.id}>수정 저장</button><button className="btn btn-secondary" onClick={() => { setEditingId(null); setDraft(null); }}>취소</button></div></div>
             ) : (
               <><div className="message-analysis"><div className="analysis-value"><small>거래처</small><strong>{message.analysis.client || '확인 필요'}</strong></div><div className="analysis-value"><small>제안 금액</small><strong>{message.analysis.amount == null ? '확인 필요' : `${message.analysis.amount.toLocaleString()}원`}</strong></div></div>{!!message.analysis.risks.length && <div className="alert alert-warning">확인 항목 · {message.analysis.risks.join(' · ')}</div>}</>

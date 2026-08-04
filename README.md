@@ -109,11 +109,11 @@ Content-Type: application/json
 
 외부 서비스는 핵심 도메인과 분리해 다음 순서로 연결합니다.
 
-1. 운영 R2 버킷·D1 마이그레이션·Resend/OpenAI 비밀값 적용과 실환경 검증
-2. 분석 초안에서 작업물·체크리스트·위험 항목까지 편집하는 기능
-3. Notion Public OAuth/API로 거래 데이터베이스 등록
-4. Google Calendar에 초안·게시·입금 일정을 생성
-5. Google Sheets 내보내기와 첨부 PDF/OCR 분석 추가
+1. Notion Public OAuth/API로 거래 데이터베이스 등록
+2. Google Calendar에 초안·게시·입금 일정을 생성
+3. Google Sheets 내보내기와 첨부 PDF/OCR 분석 추가
+
+OpenAI Structured Outputs 어댑터는 준비되어 있지만 API 비용 검증 전까지 운영 키 등록을 보류합니다. 키가 없어도 규칙 기반 분석과 사용자 수정 흐름은 정상 동작합니다.
 
 외부 API 키가 없어도 현재 애플리케이션과 빌드는 정상 동작합니다.
 

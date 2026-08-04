@@ -283,20 +283,27 @@ app.patch('/api/inbox/messages/:id/analysis', async (c) => {
     .bind(Number(c.req.param('id')), user.id).first<{ analysis: string; status: string }>();
   if (!message) return c.json({ message: '수신 메일을 찾을 수 없습니다.' }, 404);
   if (message.status === 'SAVED') return c.json({ message: '이미 거래로 저장된 메일은 수정할 수 없습니다.' }, 409);
-  const input = await body<Partial<ProposalAnalysis>>(c as AppContext);
+  const input = await body<Record<string, unknown>>(c as AppContext);
   const current = JSON.parse(message.analysis) as ProposalAnalysis;
   const nullableText = (value: unknown) => typeof value === 'string' && value.trim() ? value.trim() : null;
   const nullableNumber = (value: unknown) => value === null || value === '' ? null : Number(value);
+  const stringList = (value: unknown): string[] | null => Array.isArray(value) && value.length <= 50 && value.every((item) => typeof item === 'string' && item.length <= 300)
+    ? value.map((item) => item.trim()).filter(Boolean) : null;
+  const deliverables = input.deliverables === undefined ? current.deliverables : stringList(input.deliverables);
+  const tasks = input.tasks === undefined ? current.tasks : stringList(input.tasks);
+  const risks = input.risks === undefined ? current.risks : stringList(input.risks);
+  if (!deliverables || !tasks || !risks) return c.json({ message: '작업물·체크리스트·위험 항목은 각각 50개, 항목당 300자 이하여야 합니다.' }, 400);
   const updated: ProposalAnalysis = {
     ...current,
-    client: nullableText(input.client),
-    dealType: nullableText(input.dealType),
-    amount: nullableNumber(input.amount),
-    draftDueDate: nullableText(input.draftDueDate),
-    publishDueDate: nullableText(input.publishDueDate),
-    revisionCount: nullableNumber(input.revisionCount),
-    secondaryUsage: nullableText(input.secondaryUsage),
-    paymentCondition: nullableText(input.paymentCondition),
+    client: input.client === undefined ? current.client : nullableText(input.client),
+    dealType: input.dealType === undefined ? current.dealType : nullableText(input.dealType),
+    amount: input.amount === undefined ? current.amount : nullableNumber(input.amount),
+    draftDueDate: input.draftDueDate === undefined ? current.draftDueDate : nullableText(input.draftDueDate),
+    publishDueDate: input.publishDueDate === undefined ? current.publishDueDate : nullableText(input.publishDueDate),
+    revisionCount: input.revisionCount === undefined ? current.revisionCount : nullableNumber(input.revisionCount),
+    secondaryUsage: input.secondaryUsage === undefined ? current.secondaryUsage : nullableText(input.secondaryUsage),
+    paymentCondition: input.paymentCondition === undefined ? current.paymentCondition : nullableText(input.paymentCondition),
+    deliverables, tasks, risks,
   };
   if ((updated.amount !== null && (!Number.isFinite(updated.amount) || updated.amount < 0)) ||
       (updated.revisionCount !== null && (!Number.isInteger(updated.revisionCount) || updated.revisionCount < 0))) {
