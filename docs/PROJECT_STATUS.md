@@ -41,15 +41,15 @@ Cloudflare Workers + D1 기반으로 전환했으며, 직접 붙여넣기와 사
 - OpenAI Responses API의 JSON Schema Structured Outputs 분석 어댑터
 - OpenAI API 키가 없거나 분석 호출이 실패할 때 규칙 기반 분석기로 자동 복귀
 - 운영 R2에서 증빙 업로드·다운로드 해시·교체·형식 제한·10MB 제한·삭제 검증 완료
+- 실제 네이버 메일로 Resend 정상 수신·빈 본문 실패 기록·재처리 시도 횟수·사용자 확인 저장·거래 중복 방지 운영 검증 완료
 
 ## 다음 작업
 
-1. 실제 Resend 웹훅에서 성공·실패·재처리 흐름을 운영 검증한다.
-2. `OPENAI_API_KEY`를 등록한 뒤 실제 Structured Outputs 응답과 fallback을 검증한다.
-3. 분석 초안에서 작업물·체크리스트·위험 항목까지 편집하도록 확장한다.
-4. Notion Public OAuth/API로 확인된 거래를 등록한다.
-5. Google Calendar에 초안·게시·입금 예정 일정을 만든다.
-6. Google Sheets 내보내기와 PDF/OCR 첨부 분석을 추가한다.
+1. `OPENAI_API_KEY`를 등록한 뒤 실제 Structured Outputs 응답과 fallback을 검증한다.
+2. 분석 초안에서 작업물·체크리스트·위험 항목까지 편집하도록 확장한다.
+3. Notion Public OAuth/API로 확인된 거래를 등록한다.
+4. Google Calendar에 초안·게시·입금 예정 일정을 만든다.
+5. Google Sheets 내보내기와 PDF/OCR 첨부 분석을 추가한다.
 
 ## 다음 작업의 완료 조건
 
