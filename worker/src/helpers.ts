@@ -14,6 +14,7 @@ export function dealResponse(row: Record<string, unknown>) {
     deliverables: jsonArray(row.deliverables), draftDueDate: row.draft_due_date,
     publishDueDate: row.publish_due_date, revisionCount: row.revision_count,
     secondaryUsage: row.secondary_usage, paymentCondition: row.payment_condition,
+    paymentDueDate: row.payment_due_date,
     tasks: jsonArray(row.tasks), risks: jsonArray(row.risks), status: row.status,
     rawText: row.raw_text, paidAt: row.paid_at, createdAt: row.created_at, updatedAt: row.updated_at,
   };

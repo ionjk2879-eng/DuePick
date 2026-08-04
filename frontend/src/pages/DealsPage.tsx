@@ -1,14 +1,18 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { deleteDeal, fetchDeals, updateDealStatus, type Deal, type DealStatus } from '../api/deals';
+import { deleteDeal, fetchDeals, updateDeal, updateDealStatus, type Deal, type DealDetailsInput, type DealStatus } from '../api/deals';
 
 const statusLabels: Record<DealStatus, string> = {
   REVIEW: '확인 필요', CONFIRMED: '확정', IN_PROGRESS: '진행 중', COMPLETED: '작업 완료', PAID: '입금 완료',
 };
+const splitLines = (value: string) => value.split('\n').map((item) => item.trim()).filter(Boolean);
 
 export default function DealsPage() {
   const [deals, setDeals] = useState<Deal[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [draft, setDraft] = useState<DealDetailsInput | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const load = () => fetchDeals().then(setDeals).catch(() => setError('거래 목록을 불러오지 못했습니다.'));
   useEffect(() => { load(); }, []);
@@ -25,6 +29,24 @@ export default function DealsPage() {
     catch { setError('거래 삭제에 실패했습니다.'); }
   };
 
+  const startEditing = (deal: Deal) => {
+    setEditingId(deal.id);
+    setDraft({ client: deal.client, dealType: deal.dealType, amount: deal.amount, deliverables: [...deal.deliverables],
+      draftDueDate: deal.draftDueDate, publishDueDate: deal.publishDueDate, paymentDueDate: deal.paymentDueDate,
+      revisionCount: deal.revisionCount, secondaryUsage: deal.secondaryUsage, paymentCondition: deal.paymentCondition,
+      tasks: [...deal.tasks], risks: [...deal.risks] });
+  };
+
+  const changeDraft = <K extends keyof DealDetailsInput>(key: K, value: DealDetailsInput[K]) => setDraft((current) => current ? { ...current, [key]: value } : current);
+  const saveDetails = async () => {
+    if (editingId === null || !draft) return; setSaving(true); setError(null);
+    try {
+      const updated = await updateDeal(editingId, draft);
+      setDeals((items) => items.map((item) => item.id === editingId ? updated : item)); setEditingId(null); setDraft(null);
+    } catch { setError('거래 상세 수정에 실패했습니다. 입력값을 확인해주세요.'); }
+    finally { setSaving(false); }
+  };
+
   const total = deals.filter((deal) => deal.status !== 'REVIEW').reduce((sum, deal) => sum + (deal.amount ?? 0), 0);
   const paid = deals.filter((deal) => deal.status === 'PAID').reduce((sum, deal) => sum + (deal.amount ?? 0), 0);
 
@@ -38,10 +60,17 @@ export default function DealsPage() {
         {deals.map((deal) => <article key={deal.id} className="card deal-card">
           <div className="deal-top"><div><div className="deal-client">{deal.client ?? '거래처 확인 필요'}</div><div className="deal-type">{deal.dealType ?? '거래 유형 미정'}</div></div><div className="deal-amount">{deal.amount == null ? '금액 확인 필요' : `${deal.amount.toLocaleString()}원`}</div></div>
           <div className="deal-deliverables">{deal.deliverables.length ? deal.deliverables.map((item) => <span className="tag" key={item}>{item}</span>) : <span className="tag">작업 범위 확인 필요</span>}</div>
-          <div className="deal-meta"><div><span className="meta-label">초안 기한</span><span className="meta-value">{deal.draftDueDate ?? '-'}</span></div><div><span className="meta-label">게시 기한</span><span className="meta-value">{deal.publishDueDate ?? '-'}</span></div><div><span className="meta-label">{deal.status === 'PAID' ? '입금 완료일' : '지급 조건'}</span><span className="meta-value">{deal.status === 'PAID' && deal.paidAt ? deal.paidAt.slice(0, 10) : deal.paymentCondition ?? '-'}</span></div></div>
+          <div className="deal-meta"><div><span className="meta-label">초안 기한</span><span className="meta-value">{deal.draftDueDate ?? '-'}</span></div><div><span className="meta-label">게시 기한</span><span className="meta-value">{deal.publishDueDate ?? '-'}</span></div><div><span className="meta-label">입금 예정일</span><span className="meta-value">{deal.paymentDueDate ?? '-'}</span></div><div><span className="meta-label">{deal.status === 'PAID' ? '입금 완료일' : '지급 조건'}</span><span className="meta-value">{deal.status === 'PAID' && deal.paidAt ? deal.paidAt.slice(0, 10) : deal.paymentCondition ?? '-'}</span></div></div>
+          {editingId === deal.id && draft && <div className="edit-panel" style={{ margin: '18px -22px 0' }}>
+            <div className="form-grid"><label className="field"><span className="field-label">거래처</span><input value={draft.client ?? ''} onChange={(e) => changeDraft('client', e.target.value || null)} /></label><label className="field"><span className="field-label">거래 유형</span><input value={draft.dealType ?? ''} onChange={(e) => changeDraft('dealType', e.target.value || null)} /></label><label className="field"><span className="field-label">금액</span><input type="number" min="0" value={draft.amount ?? ''} onChange={(e) => changeDraft('amount', e.target.value === '' ? null : Number(e.target.value))} /></label><label className="field"><span className="field-label">수정 횟수</span><input type="number" min="0" value={draft.revisionCount ?? ''} onChange={(e) => changeDraft('revisionCount', e.target.value === '' ? null : Number(e.target.value))} /></label></div>
+            <div className="expense-form-grid" style={{ marginTop: 14 }}><label className="field"><span className="field-label">초안 기한</span><input type="date" value={draft.draftDueDate ?? ''} onChange={(e) => changeDraft('draftDueDate', e.target.value || null)} /></label><label className="field"><span className="field-label">게시 기한</span><input type="date" value={draft.publishDueDate ?? ''} onChange={(e) => changeDraft('publishDueDate', e.target.value || null)} /></label><label className="field"><span className="field-label">입금 예정일</span><input type="date" value={draft.paymentDueDate ?? ''} onChange={(e) => changeDraft('paymentDueDate', e.target.value || null)} /></label></div>
+            <div className="form-grid" style={{ marginTop: 14 }}><label className="field"><span className="field-label">2차 사용</span><input value={draft.secondaryUsage ?? ''} onChange={(e) => changeDraft('secondaryUsage', e.target.value || null)} /></label><label className="field"><span className="field-label">지급 조건</span><input value={draft.paymentCondition ?? ''} onChange={(e) => changeDraft('paymentCondition', e.target.value || null)} /></label></div>
+            <div className="stack" style={{ marginTop: 14 }}><label className="field"><span className="field-label">작업물</span><textarea rows={3} value={draft.deliverables.join('\n')} onChange={(e) => changeDraft('deliverables', splitLines(e.target.value))} /></label><label className="field"><span className="field-label">작업 체크리스트</span><textarea rows={4} value={draft.tasks.join('\n')} onChange={(e) => changeDraft('tasks', splitLines(e.target.value))} /></label><label className="field"><span className="field-label">위험·확인 항목</span><textarea rows={4} value={draft.risks.join('\n')} onChange={(e) => changeDraft('risks', splitLines(e.target.value))} /></label></div>
+            <div className="action-row" style={{ marginTop: 14 }}><button className="btn btn-primary" onClick={() => void saveDetails()} disabled={saving}>{saving ? '저장 중…' : '상세 저장'}</button><button className="btn btn-secondary" onClick={() => { setEditingId(null); setDraft(null); }}>취소</button></div>
+          </div>}
           <div className="deal-footer"><select aria-label="거래 상태" value={deal.status} onChange={(event) => changeStatus(deal.id, event.target.value as DealStatus)} style={{ width: 'auto' }}>
               {Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-            </select><div className="action-row"><span className={`badge badge-${deal.status.toLowerCase().replace('_', '-')}`}>{statusLabels[deal.status]}</span><button className="btn btn-danger btn-sm" onClick={() => remove(deal.id)}>삭제</button></div></div>
+            </select><div className="action-row"><span className={`badge badge-${deal.status.toLowerCase().replace('_', '-')}`}>{statusLabels[deal.status]}</span><button className="btn btn-secondary btn-sm" onClick={() => startEditing(deal)} disabled={editingId === deal.id}>상세 수정</button><button className="btn btn-danger btn-sm" onClick={() => remove(deal.id)}>삭제</button></div></div>
         </article>)}
       </div>
     </>

@@ -172,6 +172,35 @@ app.delete('/api/expenses/:id', async (c) => {
   return c.body(null, 204);
 });
 
+app.patch('/api/deals/:id', async (c) => {
+  const user = getUser(c as AppContext);
+  const id = Number(c.req.param('id'));
+  const existing = await c.env.DB.prepare('SELECT id FROM deals WHERE id = ? AND user_id = ?').bind(id, user.id).first();
+  if (!existing) return c.json({ message: '거래를 찾을 수 없습니다.' }, 404);
+  const input = await body<Record<string, unknown>>(c as AppContext);
+  const text = (value: unknown, max = 300) => typeof value === 'string' && value.trim() ? value.trim().slice(0, max) : null;
+  const number = (value: unknown) => value === null || value === '' ? null : Number(value);
+  const date = (value: unknown) => {
+    if (value === null || value === '') return null;
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
+    const parsed = new Date(`${value}T00:00:00Z`);
+    return Number.isNaN(parsed.valueOf()) || parsed.toISOString().slice(0, 10) !== value ? undefined : value;
+  };
+  const list = (value: unknown) => Array.isArray(value) && value.length <= 50 && value.every((item) => typeof item === 'string' && item.length <= 300)
+    ? value.map((item) => item.trim()).filter(Boolean) : null;
+  const amount = number(input.amount); const revisionCount = number(input.revisionCount);
+  const draftDueDate = date(input.draftDueDate); const publishDueDate = date(input.publishDueDate); const paymentDueDate = date(input.paymentDueDate);
+  const deliverables = list(input.deliverables); const tasks = list(input.tasks); const risks = list(input.risks);
+  if ((amount !== null && (!Number.isFinite(amount) || amount < 0)) || (revisionCount !== null && (!Number.isInteger(revisionCount) || revisionCount < 0))) return c.json({ message: '금액 또는 수정 횟수가 올바르지 않습니다.' }, 400);
+  if (draftDueDate === undefined || publishDueDate === undefined || paymentDueDate === undefined) return c.json({ message: '일정 날짜가 올바르지 않습니다.' }, 400);
+  if (!deliverables || !tasks || !risks) return c.json({ message: '작업물·체크리스트·위험 항목을 확인해주세요.' }, 400);
+  await c.env.DB.prepare(`UPDATE deals SET client = ?, deal_type = ?, amount = ?, deliverables = ?, draft_due_date = ?, publish_due_date = ?, payment_due_date = ?, revision_count = ?, secondary_usage = ?, payment_condition = ?, tasks = ?, risks = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`)
+    .bind(text(input.client), text(input.dealType), amount, JSON.stringify(deliverables), draftDueDate, publishDueDate, paymentDueDate,
+      revisionCount, text(input.secondaryUsage), text(input.paymentCondition), JSON.stringify(tasks), JSON.stringify(risks), id, user.id).run();
+  const row = await c.env.DB.prepare('SELECT * FROM deals WHERE id = ? AND user_id = ?').bind(id, user.id).first<Record<string, unknown>>();
+  return c.json(dealResponse(row!));
+});
+
 app.put('/api/expenses/:id/evidence', async (c) => {
   if (!c.env.EVIDENCE_BUCKET) return c.json({ message: 'R2 증빙 저장소가 설정되지 않았습니다.' }, 503);
   const user = getUser(c as AppContext);

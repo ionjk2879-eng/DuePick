@@ -14,6 +14,7 @@ export interface Deal {
   revisionCount: number | null;
   secondaryUsage: string | null;
   paymentCondition: string | null;
+  paymentDueDate: string | null;
   tasks: string[];
   risks: string[];
   status: DealStatus;
@@ -22,6 +23,9 @@ export interface Deal {
   createdAt: string;
   updatedAt: string;
 }
+
+export type DealDetailsInput = Pick<Deal, 'client' | 'dealType' | 'amount' | 'deliverables' | 'draftDueDate' |
+  'publishDueDate' | 'paymentDueDate' | 'revisionCount' | 'secondaryUsage' | 'paymentCondition' | 'tasks' | 'risks'>;
 
 export async function fetchDeals(): Promise<Deal[]> {
   return (await apiClient.get<Deal[]>('/deals')).data;
@@ -36,6 +40,10 @@ export async function createDeal(analysis: ProposalAnalysis, rawText: string): P
 
 export async function updateDealStatus(id: number, status: DealStatus): Promise<Deal> {
   return (await apiClient.patch<Deal>(`/deals/${id}/status`, { status })).data;
+}
+
+export async function updateDeal(id: number, input: DealDetailsInput): Promise<Deal> {
+  return (await apiClient.patch<Deal>(`/deals/${id}`, input)).data;
 }
 
 export async function deleteDeal(id: number): Promise<void> {
