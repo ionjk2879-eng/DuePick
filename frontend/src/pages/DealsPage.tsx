@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { deleteDeal, fetchDeals, updateDeal, updateDealStatus, type Deal, type DealDetailsInput, type DealStatus } from '../api/deals';
-import { connectNotion, disconnectNotion, exportDealToNotion, fetchNotionStatus, type NotionStatus } from '../api/notion';
+import { connectNotion, disconnectNotion, exportDealToNotion, fetchNotionStatus, setupNotionWorkspace, type NotionStatus } from '../api/notion';
 
 const statusLabels: Record<DealStatus, string> = {
   REVIEW: '확인 필요', CONFIRMED: '확정', IN_PROGRESS: '진행 중', COMPLETED: '작업 완료', PAID: '입금 완료',
@@ -15,13 +15,13 @@ export default function DealsPage() {
   const [draft, setDraft] = useState<DealDetailsInput | null>(null);
   const [saving, setSaving] = useState(false);
   const [notion, setNotion] = useState<NotionStatus | null>(null);
-  const [notionBusy, setNotionBusy] = useState<number | 'connect' | 'disconnect' | null>(null);
+  const [notionBusy, setNotionBusy] = useState<number | 'connect' | 'disconnect' | 'setup' | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const load = () => fetchDeals().then(setDeals).catch(() => setError('거래 목록을 불러오지 못했습니다.'));
   useEffect(() => {
     load();
-    fetchNotionStatus().then(setNotion).catch(() => setNotion({ connected: false, workspaceId: null, workspaceName: null, updatedAt: null }));
+    fetchNotionStatus().then(setNotion).catch(() => setNotion({ connected: false, configured: false, workspaceId: null, workspaceName: null, rootPageUrl: null, updatedAt: null }));
     const result = new URLSearchParams(window.location.search).get('notion');
     if (result) {
       setNotice(result === 'connected' ? 'Notion 연결이 완료되었습니다.' : result === 'denied' ? 'Notion 연결이 취소되었습니다.' : 'Notion 연결을 완료하지 못했습니다.');
@@ -37,8 +37,18 @@ export default function DealsPage() {
 
   const stopNotion = async () => {
     setNotionBusy('disconnect'); setError(null);
-    try { await disconnectNotion(); setNotion({ connected: false, workspaceId: null, workspaceName: null, updatedAt: null }); setNotice('Notion 연결을 해제했습니다.'); }
+    try { await disconnectNotion(); setNotion({ connected: false, configured: false, workspaceId: null, workspaceName: null, rootPageUrl: null, updatedAt: null }); setNotice('Notion 연결을 해제했습니다.'); }
     catch { setError('Notion 연결 해제에 실패했습니다.'); }
+    finally { setNotionBusy(null); }
+  };
+
+  const createNotionWorkspace = async () => {
+    if (!notion) return; setNotionBusy('setup'); setError(null); setNotice(null);
+    try {
+      const result = await setupNotionWorkspace();
+      setNotion({ ...notion, configured: true, rootPageUrl: result.rootPageUrl });
+      setNotice('Duepick 홈과 거래 관리 데이터베이스를 만들었습니다.');
+    } catch { setError('Duepick Notion 공간을 만들지 못했습니다. 잠시 후 다시 시도해주세요.'); }
     finally { setNotionBusy(null); }
   };
 
@@ -91,7 +101,7 @@ export default function DealsPage() {
       <section className="grid-3" style={{ marginBottom: 24 }}><div className="card metric-card"><div className="metric-label">전체 거래</div><div className="metric-value">{deals.length}건</div><div className="metric-note">확인 대기 포함</div></div><div className="card metric-card"><div className="metric-label">확정 거래 금액</div><div className="metric-value">{total.toLocaleString()}원</div><div className="metric-note">확인 완료된 거래</div></div><div className="card metric-card"><div className="metric-label">입금 완료</div><div className="metric-value">{paid.toLocaleString()}원</div><div className="metric-note">실제 수령 기준</div></div></section>
       <section className="card integration-card">
         <div><p className="eyebrow">NOTION EXPORT</p><h2 className="card-title">Notion 연결</h2><p className="card-copy">사용자가 확인한 거래만 선택해서 개인 Notion 페이지로 내보냅니다.</p></div>
-        <div className="action-row">{notion?.connected ? <><span className="badge badge-saved">{notion.workspaceName || 'Notion 워크스페이스'} 연결됨</span><button className="btn btn-secondary btn-sm" onClick={() => void stopNotion()} disabled={notionBusy !== null}>{notionBusy === 'disconnect' ? '해제 중…' : '연결 해제'}</button></> : <button className="btn btn-primary" onClick={() => void startNotionConnect()} disabled={notionBusy !== null}>{notionBusy === 'connect' ? '연결 중…' : 'Notion 연결'}</button>}</div>
+        <div className="action-row">{notion?.connected ? <><span className="badge badge-saved">{notion.workspaceName || 'Notion 워크스페이스'} 연결됨</span>{!notion.configured && <button className="btn btn-primary" onClick={() => void createNotionWorkspace()} disabled={notionBusy !== null}>{notionBusy === 'setup' ? '만드는 중…' : 'Duepick 공간 만들기'}</button>}{notion.rootPageUrl && <a className="btn btn-secondary btn-sm" href={notion.rootPageUrl} target="_blank" rel="noreferrer">Duepick 홈 열기</a>}<button className="btn btn-secondary btn-sm" onClick={() => void stopNotion()} disabled={notionBusy !== null}>{notionBusy === 'disconnect' ? '해제 중…' : '연결 해제'}</button></> : <button className="btn btn-primary" onClick={() => void startNotionConnect()} disabled={notionBusy !== null}>{notionBusy === 'connect' ? '연결 중…' : 'Notion 연결'}</button>}</div>
       </section>
       {error && <div className="alert alert-error">{error}</div>}
       {notice && <div className="alert alert-info">{notice}</div>}
@@ -110,7 +120,7 @@ export default function DealsPage() {
           </div>}
           <div className="deal-footer"><select aria-label="거래 상태" value={deal.status} onChange={(event) => changeStatus(deal.id, event.target.value as DealStatus)} style={{ width: 'auto' }}>
               {Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-            </select><div className="action-row"><span className={`badge badge-${deal.status.toLowerCase().replace('_', '-')}`}>{statusLabels[deal.status]}</span>{deal.notionPageUrl ? <a className="btn btn-secondary btn-sm" href={deal.notionPageUrl} target="_blank" rel="noreferrer">Notion에서 열기</a> : <button className="btn btn-secondary btn-sm" onClick={() => void sendToNotion(deal.id)} disabled={!notion?.connected || deal.status === 'REVIEW' || notionBusy !== null}>{notionBusy === deal.id ? '내보내는 중…' : 'Notion으로 보내기'}</button>}<button className="btn btn-secondary btn-sm" onClick={() => startEditing(deal)} disabled={editingId === deal.id}>상세 수정</button><button className="btn btn-danger btn-sm" onClick={() => remove(deal.id)}>삭제</button></div></div>
+            </select><div className="action-row"><span className={`badge badge-${deal.status.toLowerCase().replace('_', '-')}`}>{statusLabels[deal.status]}</span>{deal.notionPageUrl ? <a className="btn btn-secondary btn-sm" href={deal.notionPageUrl} target="_blank" rel="noreferrer">Notion에서 열기</a> : <button className="btn btn-secondary btn-sm" onClick={() => void sendToNotion(deal.id)} disabled={!notion?.configured || deal.status === 'REVIEW' || notionBusy !== null}>{notionBusy === deal.id ? '내보내는 중…' : 'Notion으로 보내기'}</button>}<button className="btn btn-secondary btn-sm" onClick={() => startEditing(deal)} disabled={editingId === deal.id}>상세 수정</button><button className="btn btn-danger btn-sm" onClick={() => remove(deal.id)}>삭제</button></div></div>
         </article>)}
       </div>
     </>

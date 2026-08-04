@@ -48,10 +48,12 @@ Cloudflare Workers + D1 기반 핵심 흐름과 선택적 Claude 분석을 운�
 - Notion Public OAuth 연결·상태 확인·해제 API와 사용자별 암호화 토큰 저장
 - 확인 필요 상태를 제외한 거래의 선택적 Notion 개인 페이지 내보내기와 결과 링크 보관
 - 운영 Notion Public OAuth 승인·콜백·사용자별 암호화 연결 저장 검증 완료
+- 연결된 워크스페이스에 `Duepick 홈`·사용 방법·거래 관리 데이터베이스를 자동 생성하는 초기 구성 API와 UI
+- Notion 내보내기를 사용자별 Duepick 거래 관리 데이터 소스에 구조화해 저장
 
 ## 다음 작업
 
-1. OAuth 중 `Duepick 홈` 템플릿을 자동 복제하고 그 아래 거래 관리 데이터베이스로 내보내는 흐름을 구현·검증한다.
+1. 운영 Notion에서 `Duepick 홈` 자동 구성과 거래 관리 데이터베이스 내보내기를 검증한다.
 2. Google Calendar에 초안·게시·입금 예정 일정을 만든다.
 3. Google Sheets 내보내기와 PDF/OCR 첨부 분석을 추가한다.
 

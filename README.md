@@ -40,6 +40,7 @@
 | `PATCH` | `/api/deals/{id}/status` | 거래 상태 변경 |
 | `DELETE` | `/api/deals/{id}` | 거래 삭제 |
 | `POST` | `/api/deals/{id}/notion` | 확인된 거래를 연결된 Notion에 내보내기 |
+| `POST` | `/api/integrations/notion/setup` | Duepick 홈·안내·거래 관리 데이터베이스 자동 구성 |
 
 Notion 연결 토큰은 `JWT_SECRET`에서 파생한 AES-GCM 키로 암호화해 D1에 저장합니다. OAuth 설정이 없어도 거래 관리와 다른 기능은 정상 동작합니다.
 
@@ -116,7 +117,7 @@ Content-Type: application/json
 
 외부 서비스는 핵심 도메인과 분리해 다음 순서로 연결합니다.
 
-1. OAuth 중 Duepick 홈 템플릿을 자동 복제하고 거래 관리 데이터베이스 내보내기를 검증
+1. 운영 Notion에서 Duepick 홈 자동 구성과 거래 관리 데이터베이스 내보내기를 검증
 2. Google Calendar에 초안·게시·입금 일정을 생성
 3. Google Sheets 내보내기와 첨부 PDF/OCR 분석 추가
 

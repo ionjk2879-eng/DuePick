@@ -37,10 +37,11 @@ app.onError((error, c) => {
 app.get('/api/health', (c) => c.json({ status: 'ok', runtime: 'cloudflare-workers' }));
 
 app.get('/api/integrations/notion/status', async (c) => {
-  const row = await c.env.DB.prepare('SELECT workspace_id, workspace_name, updated_at FROM notion_connections WHERE user_id = ?')
-    .bind(getUser(c as AppContext).id).first<{ workspace_id: string; workspace_name: string | null; updated_at: string }>();
-  return c.json(row ? { connected: true, workspaceId: row.workspace_id, workspaceName: row.workspace_name, updatedAt: row.updated_at }
-    : { connected: false, workspaceId: null, workspaceName: null, updatedAt: null });
+  const row = await c.env.DB.prepare('SELECT workspace_id, workspace_name, root_page_url, setup_at, updated_at FROM notion_connections WHERE user_id = ?')
+    .bind(getUser(c as AppContext).id).first<{ workspace_id: string; workspace_name: string | null; root_page_url: string | null; setup_at: string | null; updated_at: string }>();
+  return c.json(row ? { connected: true, configured: Boolean(row.setup_at), workspaceId: row.workspace_id,
+    workspaceName: row.workspace_name, rootPageUrl: row.root_page_url, updatedAt: row.updated_at }
+    : { connected: false, configured: false, workspaceId: null, workspaceName: null, rootPageUrl: null, updatedAt: null });
 });
 
 app.post('/api/integrations/notion/connect', async (c) => {
@@ -88,6 +89,58 @@ app.get('/api/integrations/notion/callback', async (c) => {
 app.delete('/api/integrations/notion', async (c) => {
   await c.env.DB.prepare('DELETE FROM notion_connections WHERE user_id = ?').bind(getUser(c as AppContext).id).run();
   return c.body(null, 204);
+});
+
+app.post('/api/integrations/notion/setup', async (c) => {
+  const user = getUser(c as AppContext);
+  const connection = await c.env.DB.prepare('SELECT access_token_encrypted, root_page_url, setup_at FROM notion_connections WHERE user_id = ?')
+    .bind(user.id).first<{ access_token_encrypted: string; root_page_url: string | null; setup_at: string | null }>();
+  if (!connection) return c.json({ message: '먼저 Notion을 연결해주세요.' }, 409);
+  if (connection.setup_at) return c.json({ configured: true, rootPageUrl: connection.root_page_url });
+  const accessToken = await decryptNotionToken(connection.access_token_encrypted, c.env.JWT_SECRET);
+  const rich = (content: string, bold = false) => [{ type: 'text', text: { content }, annotations: { bold } }];
+  const request = async (path: string, bodyValue: unknown) => {
+    const response = await fetch(`https://api.notion.com/v1/${path}`, { method: 'POST', headers: notionHeaders(accessToken), body: JSON.stringify(bodyValue) });
+    const result = await response.json<Record<string, unknown>>();
+    if (!response.ok) throw new Error(String(result.message || 'Notion 공간을 만들지 못했습니다.'));
+    return result;
+  };
+  const root = await request('pages', {
+    parent: { type: 'workspace', workspace: true }, icon: { type: 'emoji', emoji: '🎯' },
+    properties: { title: { type: 'title', title: rich('Duepick 홈') } },
+    children: [
+      { object: 'block', type: 'heading_1', heading_1: { rich_text: rich('제안부터 입금까지, 놓치지 않게') } },
+      { object: 'block', type: 'callout', callout: { icon: { type: 'emoji', emoji: '👋' }, rich_text: rich('Duepick에서 확인한 거래를 이 공간에 모아 작업과 입금 일정을 관리하세요.') } },
+      { object: 'block', type: 'heading_2', heading_2: { rich_text: rich('빠른 시작') } },
+      { object: 'block', type: 'numbered_list_item', numbered_list_item: { rich_text: rich('Duepick에서 제안 메일을 분석하고 내용을 확인합니다.') } },
+      { object: 'block', type: 'numbered_list_item', numbered_list_item: { rich_text: rich('확정된 거래에서 Notion으로 보내기를 누릅니다.') } },
+      { object: 'block', type: 'numbered_list_item', numbered_list_item: { rich_text: rich('아래 거래 관리에서 상태·마감일·입금 예정일을 확인합니다.') } },
+      { object: 'block', type: 'divider', divider: {} },
+    ],
+  });
+  const rootId = String(root.id); const rootUrl = String(root.url);
+  await request('pages', { parent: { type: 'page_id', page_id: rootId }, icon: { type: 'emoji', emoji: '📘' },
+    properties: { title: { type: 'title', title: rich('Duepick 사용 방법') } }, children: [
+      { object: 'block', type: 'heading_2', heading_2: { rich_text: rich('기본 원칙') } },
+      { object: 'block', type: 'bulleted_list_item', bulleted_list_item: { rich_text: rich('AI 분석 결과는 원문과 비교해 확인한 뒤 저장하세요.') } },
+      { object: 'block', type: 'bulleted_list_item', bulleted_list_item: { rich_text: rich('명시되지 않은 계약 조건은 추측하지 말고 확인 필요 상태로 유지하세요.') } },
+      { object: 'block', type: 'bulleted_list_item', bulleted_list_item: { rich_text: rich('거래 상태와 입금 완료 처리는 Duepick을 기준으로 관리하세요.') } },
+    ] });
+  const database = await request('databases', {
+    parent: { type: 'page_id', page_id: rootId }, title: rich('거래 관리'), is_inline: true,
+    initial_data_source: { properties: {
+      '거래명': { title: {} }, '거래처': { rich_text: {} }, '유형': { rich_text: {} },
+      '상태': { select: { options: [{ name: '확정', color: 'blue' }, { name: '진행 중', color: 'purple' }, { name: '작업 완료', color: 'green' }, { name: '입금 완료', color: 'gray' }] } },
+      '금액': { number: { format: 'won' } }, '초안 기한': { date: {} }, '게시 기한': { date: {} }, '입금 예정일': { date: {} },
+      '지급 조건': { rich_text: {} }, '작업물': { rich_text: {} }, '확인 항목': { rich_text: {} }, 'Duepick ID': { number: {} },
+    } },
+  });
+  const sources = database.data_sources as Array<{ id?: string }> | undefined;
+  const dataSourceId = sources?.[0]?.id;
+  if (!database.id || !dataSourceId) throw new Error('Notion 거래 데이터베이스 정보를 확인하지 못했습니다.');
+  await c.env.DB.prepare(`UPDATE notion_connections SET root_page_id = ?, root_page_url = ?, database_id = ?, data_source_id = ?, setup_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`)
+    .bind(rootId, rootUrl, String(database.id), dataSourceId, user.id).run();
+  return c.json({ configured: true, rootPageUrl: rootUrl });
 });
 
 app.post('/api/auth/signup', async (c) => {
@@ -263,9 +316,10 @@ app.post('/api/deals/:id/notion', async (c) => {
     .first<Record<string, unknown>>();
   if (!deal) return c.json({ message: '거래를 찾을 수 없습니다.' }, 404);
   if (deal.status === 'REVIEW') return c.json({ message: '사용자가 확인한 거래만 Notion으로 내보낼 수 있습니다.' }, 400);
-  const connection = await c.env.DB.prepare('SELECT access_token_encrypted, refresh_token_encrypted FROM notion_connections WHERE user_id = ?')
-    .bind(user.id).first<{ access_token_encrypted: string; refresh_token_encrypted: string | null }>();
+  const connection = await c.env.DB.prepare('SELECT access_token_encrypted, refresh_token_encrypted, data_source_id FROM notion_connections WHERE user_id = ?')
+    .bind(user.id).first<{ access_token_encrypted: string; refresh_token_encrypted: string | null; data_source_id: string | null }>();
   if (!connection) return c.json({ message: '먼저 Notion을 연결해주세요.' }, 409);
+  if (!connection.data_source_id) return c.json({ message: '먼저 Duepick Notion 공간을 만들어주세요.' }, 409);
 
   const text = (content: unknown) => [{ type: 'text', text: { content: String(content ?? '').slice(0, 2000) } }];
   const paragraph = (label: string, value: unknown) => ({ object: 'block', type: 'paragraph',
@@ -284,7 +338,20 @@ app.post('/api/deals/:id/notion', async (c) => {
     list('작업물', deal.deliverables), list('체크리스트', deal.tasks), list('확인 위험', deal.risks),
     { object: 'block', type: 'divider', divider: {} }, paragraph('원문', String(deal.raw_text || '').slice(0, 1900)),
   ];
-  const pageBody = JSON.stringify({ properties: { title: { type: 'title', title: text(title) } }, children });
+  const dateProperty = (value: unknown) => value ? { date: { start: String(value) } } : undefined;
+  const properties: Record<string, unknown> = {
+    '거래명': { title: text(title) }, '거래처': { rich_text: text(deal.client || '') },
+    '유형': { rich_text: text(deal.deal_type || '') },
+    '상태': { select: { name: statusLabels[String(deal.status)] || String(deal.status) } },
+    '금액': { number: deal.amount == null ? null : Number(deal.amount) },
+    '지급 조건': { rich_text: text(deal.payment_condition || '') },
+    '작업물': { rich_text: text((JSON.parse(String(deal.deliverables || '[]')) as string[]).join(' · ')) },
+    '확인 항목': { rich_text: text((JSON.parse(String(deal.risks || '[]')) as string[]).join(' · ')) },
+    'Duepick ID': { number: Number(deal.id) },
+  };
+  const dates = { '초안 기한': dateProperty(deal.draft_due_date), '게시 기한': dateProperty(deal.publish_due_date), '입금 예정일': dateProperty(deal.payment_due_date) };
+  Object.entries(dates).forEach(([key, value]) => { if (value) properties[key] = value; });
+  const pageBody = JSON.stringify({ parent: { type: 'data_source_id', data_source_id: connection.data_source_id }, properties, children });
   let accessToken = await decryptNotionToken(connection.access_token_encrypted, c.env.JWT_SECRET);
   const createPage = () => fetch('https://api.notion.com/v1/pages', {
     method: 'POST', headers: notionHeaders(accessToken), body: pageBody,
