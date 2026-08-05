@@ -37,11 +37,19 @@ app.onError((error, c) => {
 app.get('/api/health', (c) => c.json({ status: 'ok', runtime: 'cloudflare-workers' }));
 
 app.get('/api/integrations/notion/status', async (c) => {
-  const row = await c.env.DB.prepare('SELECT workspace_id, workspace_name, root_page_url, setup_at, updated_at FROM notion_connections WHERE user_id = ?')
-    .bind(getUser(c as AppContext).id).first<{ workspace_id: string; workspace_name: string | null; root_page_url: string | null; setup_at: string | null; updated_at: string }>();
-  return c.json(row ? { connected: true, configured: Boolean(row.setup_at), workspaceId: row.workspace_id,
-    workspaceName: row.workspace_name, rootPageUrl: row.root_page_url, updatedAt: row.updated_at }
-    : { connected: false, configured: false, workspaceId: null, workspaceName: null, rootPageUrl: null, updatedAt: null });
+  const row = await c.env.DB.prepare('SELECT workspace_id, workspace_name, root_page_id, root_page_url, setup_at, updated_at FROM notion_connections WHERE user_id = ?')
+    .bind(getUser(c as AppContext).id).first<{ workspace_id: string; workspace_name: string | null; root_page_id: string | null; root_page_url: string | null; setup_at: string | null; updated_at: string }>();
+  if (!row) return c.json({ connected: false, configured: false, workspaceId: null, workspaceName: null, rootPageUrl: null, updatedAt: null });
+  const rawUrl = row.root_page_url;
+  const rootPageUrl = row.root_page_id && (!rawUrl || !rawUrl.startsWith('https://'))
+    ? `https://www.notion.so/${row.root_page_id.replace(/-/g, '')}`
+    : rawUrl;
+  if (rootPageUrl !== rawUrl) {
+    await c.env.DB.prepare('UPDATE notion_connections SET root_page_url = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?')
+      .bind(rootPageUrl, getUser(c as AppContext).id).run();
+  }
+  return c.json({ connected: true, configured: Boolean(row.setup_at), workspaceId: row.workspace_id,
+    workspaceName: row.workspace_name, rootPageUrl, updatedAt: row.updated_at });
 });
 
 app.post('/api/integrations/notion/connect', async (c) => {
