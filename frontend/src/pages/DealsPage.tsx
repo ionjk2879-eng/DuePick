@@ -129,6 +129,9 @@ export default function DealsPage() {
                     {deal.dealType && <span className="pipeline-card-type">{deal.dealType}</span>}
                     {deal.publishDueDate && <div className="pipeline-card-date">게시 <strong>{deal.publishDueDate}</strong></div>}
                     {deal.paymentDueDate && <div className="pipeline-card-date">입금 <strong>{deal.paymentDueDate}</strong></div>}
+                    <select className="pipeline-card-select" value={deal.status} onChange={(e) => changeStatus(deal.id, e.target.value as DealStatus)}>
+                      {Object.entries(statusLabels).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    </select>
                   </div>
                 ))}
             </div>
