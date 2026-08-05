@@ -98,7 +98,16 @@ app.post('/api/integrations/notion/setup', async (c) => {
     .bind(user.id).first<{ access_token_encrypted: string; root_page_id: string | null; root_page_url: string | null;
       database_id: string | null; data_source_id: string | null; setup_at: string | null }>();
   if (!connection) return c.json({ message: '먼저 Notion을 연결해주세요.' }, 409);
-  if (connection.setup_at) return c.json({ configured: true, rootPageUrl: connection.root_page_url });
+  if (connection.setup_at) {
+    const rootPageUrl = connection.root_page_id && (!connection.root_page_url || !connection.root_page_url.startsWith('https://'))
+      ? `https://www.notion.so/${connection.root_page_id.replace(/-/g, '')}`
+      : connection.root_page_url;
+    if (rootPageUrl !== connection.root_page_url && connection.root_page_id) {
+      await c.env.DB.prepare('UPDATE notion_connections SET root_page_url = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?')
+        .bind(rootPageUrl, user.id).run();
+    }
+    return c.json({ configured: true, rootPageUrl });
+  }
   const accessToken = await decryptNotionToken(connection.access_token_encrypted, c.env.JWT_SECRET);
   const rich = (content: string, bold = false) => [{ type: 'text', text: { content }, annotations: { bold } }];
   const request = async (path: string, bodyValue?: unknown, method = 'POST') => {
@@ -112,6 +121,7 @@ app.post('/api/integrations/notion/setup', async (c) => {
     const result = await request('search', { query, filter: { property: 'object', value: object }, page_size: 20 });
     return (result.results as Array<Record<string, unknown>> | undefined) ?? [];
   };
+  const notionPageUrl = (id: string) => `https://www.notion.so/${id.replace(/-/g, '')}`;
   const plainTitle = (item: Record<string, unknown>) => {
     const title = item.title as Array<{ plain_text?: string }> | undefined;
     if (title) return title.map((part) => part.plain_text || '').join('');
@@ -119,13 +129,10 @@ app.post('/api/integrations/notion/setup', async (c) => {
     return Object.values(properties ?? {}).find((property) => property.type === 'title')?.title?.map((part) => part.plain_text || '').join('') || '';
   };
   let rootId = connection.root_page_id; let rootUrl = connection.root_page_url; let createdRoot = false;
-  if (rootId && !rootUrl) {
-    const existingPage = await request(`pages/${rootId}`, undefined, 'GET');
-    rootUrl = String(existingPage.url || '');
-  }
+  if (rootId && !rootUrl) rootUrl = notionPageUrl(rootId);
   if (!rootId) {
     const existingRoot = (await search('Duepick 홈', 'page')).find((item) => plainTitle(item) === 'Duepick 홈');
-    if (existingRoot) { rootId = String(existingRoot.id); rootUrl = String(existingRoot.url || ''); }
+    if (existingRoot) { rootId = String(existingRoot.id); rootUrl = notionPageUrl(rootId); }
   }
   if (!rootId) {
     const root = await request('pages', {
@@ -141,7 +148,7 @@ app.post('/api/integrations/notion/setup', async (c) => {
       { object: 'block', type: 'divider', divider: {} },
     ],
     });
-    rootId = String(root.id); rootUrl = String(root.url); createdRoot = true;
+    rootId = String(root.id); rootUrl = notionPageUrl(rootId); createdRoot = true;
     await c.env.DB.prepare('UPDATE notion_connections SET root_page_id = ?, root_page_url = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?')
       .bind(rootId, rootUrl, user.id).run();
   }
