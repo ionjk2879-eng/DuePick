@@ -11,6 +11,9 @@ export interface Env {
   NOTION_CLIENT_ID?: string;
   NOTION_CLIENT_SECRET?: string;
   NOTION_REDIRECT_URI?: string;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  GOOGLE_REDIRECT_URI?: string;
 }
 
 export interface UserRow {

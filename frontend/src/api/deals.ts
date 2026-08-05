@@ -22,6 +22,7 @@ export interface Deal {
   notionPageId: string | null;
   notionPageUrl: string | null;
   notionExportedAt: string | null;
+  calendarSyncedAt: string | null;
   rawText: string;
   createdAt: string;
   updatedAt: string;

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { deleteDeal, fetchDeals, updateDeal, updateDealStatus, type Deal, type DealDetailsInput, type DealStatus } from '../api/deals';
 import { connectNotion, disconnectNotion, exportDealToNotion, fetchNotionStatus, setupNotionWorkspace, type NotionStatus } from '../api/notion';
+import { connectGoogle, disconnectGoogle, fetchGoogleStatus, syncDealToCalendar, type GoogleStatus } from '../api/google';
 
 const statusLabels: Record<DealStatus, string> = {
   REVIEW: '확인 필요', CONFIRMED: '확정', IN_PROGRESS: '진행 중', COMPLETED: '작업 완료', PAID: '입금 완료',
@@ -17,12 +18,20 @@ export default function DealsPage() {
   const [saving, setSaving] = useState(false);
   const [notion, setNotion] = useState<NotionStatus | null>(null);
   const [notionBusy, setNotionBusy] = useState<number | 'connect' | 'disconnect' | 'setup' | null>(null);
+  const [google, setGoogle] = useState<GoogleStatus | null>(null);
+  const [googleBusy, setGoogleBusy] = useState<number | 'connect' | 'disconnect' | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const load = () => fetchDeals().then(setDeals).catch(() => setError('거래 목록을 불러오지 못했습니다.'));
   useEffect(() => {
     load();
     fetchNotionStatus().then(setNotion).catch(() => setNotion({ connected: false, configured: false, workspaceId: null, workspaceName: null, rootPageUrl: null, updatedAt: null }));
+    fetchGoogleStatus().then(setGoogle).catch(() => setGoogle({ connected: false, email: null, updatedAt: null }));
+    const googleResult = new URLSearchParams(window.location.search).get('google');
+    if (googleResult) {
+      setNotice(googleResult === 'connected' ? 'Google Calendar 연결이 완료되었습니다.' : googleResult === 'denied' ? 'Google Calendar 연결이 취소되었습니다.' : 'Google Calendar 연결을 완료하지 못했습니다.');
+      window.history.replaceState({}, '', window.location.pathname);
+    }
     const result = new URLSearchParams(window.location.search).get('notion');
     if (result) {
       setNotice(result === 'connected' ? 'Notion 연결이 완료되었습니다.' : result === 'denied' ? 'Notion 연결이 취소되었습니다.' : 'Notion 연결을 완료하지 못했습니다.');
@@ -51,6 +60,29 @@ export default function DealsPage() {
       setNotice('Duepick 홈과 거래 관리 데이터베이스를 만들었습니다.');
     } catch { setError('Duepick Notion 공간을 만들지 못했습니다. 잠시 후 다시 시도해주세요.'); }
     finally { setNotionBusy(null); }
+  };
+
+  const startGoogleConnect = async () => {
+    setGoogleBusy('connect'); setError(null);
+    try { await connectGoogle(); }
+    catch { setError('Google OAuth 설정이 아직 필요합니다.'); setGoogleBusy(null); }
+  };
+
+  const stopGoogle = async () => {
+    setGoogleBusy('disconnect'); setError(null);
+    try { await disconnectGoogle(); setGoogle({ connected: false, email: null, updatedAt: null }); setNotice('Google Calendar 연결을 해제했습니다.'); }
+    catch { setError('Google Calendar 연결 해제에 실패했습니다.'); }
+    finally { setGoogleBusy(null); }
+  };
+
+  const addToCalendar = async (id: number) => {
+    setGoogleBusy(id); setError(null); setNotice(null);
+    try {
+      const { count } = await syncDealToCalendar(id);
+      setDeals((items) => items.map((item) => item.id === id ? { ...item, calendarSyncedAt: new Date().toISOString() } : item));
+      setNotice(`Google Calendar에 일정 ${count}개를 등록했습니다.`);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Calendar 등록에 실패했습니다.'); }
+    finally { setGoogleBusy(null); }
   };
 
   const sendToNotion = async (id: number) => {
@@ -110,6 +142,10 @@ export default function DealsPage() {
         <div><p className="eyebrow">NOTION EXPORT</p><h2 className="card-title">Notion 연결</h2><p className="card-copy">사용자가 확인한 거래만 선택해서 개인 Notion 페이지로 내보냅니다.</p></div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10 }}>{notion?.connected ? <><a className="badge badge-saved" href={notion.rootPageUrl ?? 'https://notion.so'} target="_blank" rel="noreferrer" style={{ textDecoration: 'none' }}>Notion · {notion.workspaceName || '워크스페이스'} 연결됨 ↗</a><div className="action-row">{!notion.configured && <button className="btn btn-primary" onClick={() => void createNotionWorkspace()} disabled={notionBusy !== null}>{notionBusy === 'setup' ? '만드는 중…' : 'Duepick 공간 만들기'}</button>}<a className="btn btn-secondary btn-sm" href={notion.rootPageUrl ?? 'https://notion.so'} target="_blank" rel="noreferrer">Notion에서 열기</a><button className="btn btn-secondary btn-sm" onClick={() => void stopNotion()} disabled={notionBusy !== null}>{notionBusy === 'disconnect' ? '해제 중…' : '연결 해제'}</button></div></> : <button className="btn btn-primary" onClick={() => void startNotionConnect()} disabled={notionBusy !== null}>{notionBusy === 'connect' ? '연결 중…' : 'Notion 연결'}</button>}</div>
       </section>
+      <section className="card integration-card">
+        <div><p className="eyebrow">CALENDAR SYNC</p><h2 className="card-title">Google Calendar</h2><p className="card-copy">거래별 초안·게시·입금 예정일을 Google Calendar에 자동으로 등록합니다.</p></div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10 }}>{google?.connected ? <><span className="badge badge-saved">Google Calendar 연결됨{google.email ? ` · ${google.email}` : ''}</span><div className="action-row"><button className="btn btn-secondary btn-sm" onClick={() => void stopGoogle()} disabled={googleBusy !== null}>{googleBusy === 'disconnect' ? '해제 중…' : '연결 해제'}</button></div></> : <button className="btn btn-primary" onClick={() => void startGoogleConnect()} disabled={googleBusy !== null}>{googleBusy === 'connect' ? '연결 중…' : 'Google Calendar 연결'}</button>}</div>
+      </section>
       {error && <div className="alert alert-error">{error}</div>}
       {notice && <div className="alert alert-info">{notice}</div>}
       {!deals.length && <div className="empty-state"><div className="empty-icon">▦</div><h3>아직 저장된 거래가 없어요</h3><p>받은 메일을 확인하거나 제안 원문을 직접 분석해 첫 거래를 만들어보세요.</p><Link className="btn btn-primary" style={{ marginTop: 18 }} to="/inbox">받은 제안 보기</Link></div>}
@@ -152,7 +188,7 @@ export default function DealsPage() {
           </div>}
           <div className="deal-footer"><select aria-label="거래 상태" value={deal.status} onChange={(event) => changeStatus(deal.id, event.target.value as DealStatus)} style={{ width: 'auto' }}>
               {Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-            </select><div className="action-row"><span className={`badge badge-${deal.status.toLowerCase().replace('_', '-')}`}>{statusLabels[deal.status]}</span>{deal.notionPageUrl ? <a className="btn btn-secondary btn-sm" href={deal.notionPageUrl} target="_blank" rel="noreferrer">Notion에서 열기</a> : <button className="btn btn-secondary btn-sm" onClick={() => void sendToNotion(deal.id)} disabled={!notion?.configured || deal.status === 'REVIEW' || notionBusy !== null}>{notionBusy === deal.id ? '내보내는 중…' : 'Notion으로 보내기'}</button>}<button className="btn btn-secondary btn-sm" onClick={() => startEditing(deal)} disabled={editingId === deal.id}>상세 수정</button><button className="btn btn-danger btn-sm" onClick={() => remove(deal.id)}>삭제</button></div></div>
+            </select><div className="action-row"><span className={`badge badge-${deal.status.toLowerCase().replace('_', '-')}`}>{statusLabels[deal.status]}</span>{deal.notionPageUrl ? <a className="btn btn-secondary btn-sm" href={deal.notionPageUrl} target="_blank" rel="noreferrer">Notion에서 열기</a> : <button className="btn btn-secondary btn-sm" onClick={() => void sendToNotion(deal.id)} disabled={!notion?.configured || deal.status === 'REVIEW' || notionBusy !== null}>{notionBusy === deal.id ? '내보내는 중…' : 'Notion으로 보내기'}</button>}{google?.connected && <button className="btn btn-secondary btn-sm" onClick={() => void addToCalendar(deal.id)} disabled={(!deal.draftDueDate && !deal.publishDueDate && !deal.paymentDueDate) || googleBusy === deal.id} title={deal.calendarSyncedAt ? `마지막 등록: ${deal.calendarSyncedAt.slice(0, 10)}` : ''}>{googleBusy === deal.id ? '등록 중…' : deal.calendarSyncedAt ? '📅 재등록' : '📅 Calendar'}</button>}<button className="btn btn-secondary btn-sm" onClick={() => startEditing(deal)} disabled={editingId === deal.id}>상세 수정</button><button className="btn btn-danger btn-sm" onClick={() => remove(deal.id)}>삭제</button></div></div>
         </article>)}
       </div>
     </>

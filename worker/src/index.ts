@@ -5,6 +5,7 @@ import { analyzeWithAdapter } from './llm';
 import { body, dealResponse, expenseResponse, getUser, subscriptionResponse, type AppContext } from './helpers';
 import { createToken, hashPassword, randomToken, verifyPassword, verifyToken } from './security';
 import { createNotionState, decryptNotionToken, encryptNotionToken, notionAppOrigin, notionHeaders, notionRedirectUri, verifyNotionState } from './notion';
+import { createGoogleState, decryptGoogleToken, encryptGoogleToken, getGoogleAccessToken, googleAppOrigin, googleRedirectUri, verifyGoogleState, type GoogleConnection } from './google';
 import type { Env, UserRow, Variables } from './types';
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -198,6 +199,91 @@ app.post('/api/integrations/notion/setup', async (c) => {
   await c.env.DB.prepare(`UPDATE notion_connections SET root_page_id = ?, root_page_url = ?, database_id = ?, data_source_id = ?, setup_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`)
     .bind(rootId, rootUrl, databaseId, dataSourceId, user.id).run();
   return c.json({ configured: true, rootPageUrl: rootUrl });
+});
+
+app.get('/api/integrations/google/status', async (c) => {
+  const row = await c.env.DB.prepare('SELECT google_email, updated_at FROM google_connections WHERE user_id = ?')
+    .bind(getUser(c as AppContext).id).first<{ google_email: string | null; updated_at: string }>();
+  return c.json(row ? { connected: true, email: row.google_email, updatedAt: row.updated_at }
+    : { connected: false, email: null, updatedAt: null });
+});
+
+app.post('/api/integrations/google/connect', async (c) => {
+  if (!c.env.GOOGLE_CLIENT_ID) return c.json({ message: 'Google OAuth 설정이 아직 등록되지 않았습니다.' }, 503);
+  const state = await createGoogleState(getUser(c as AppContext).id, c.env.JWT_SECRET);
+  const query = new URLSearchParams({ client_id: c.env.GOOGLE_CLIENT_ID, redirect_uri: googleRedirectUri(c.env),
+    response_type: 'code', scope: 'https://www.googleapis.com/auth/calendar.events email',
+    access_type: 'offline', prompt: 'consent', state });
+  return c.json({ authorizationUrl: `https://accounts.google.com/o/oauth2/v2/auth?${query}` });
+});
+
+app.get('/api/integrations/google/callback', async (c) => {
+  const origin = googleAppOrigin(c.env);
+  const userId = await verifyGoogleState(c.req.query('state') ?? '', c.env.JWT_SECRET);
+  if (!userId || c.req.query('error')) return c.redirect(`${origin}/deals?google=denied`);
+  const code = c.req.query('code');
+  if (!code || !c.env.GOOGLE_CLIENT_ID || !c.env.GOOGLE_CLIENT_SECRET) return c.redirect(`${origin}/deals?google=error`);
+  try {
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ code, client_id: c.env.GOOGLE_CLIENT_ID, client_secret: c.env.GOOGLE_CLIENT_SECRET,
+        redirect_uri: googleRedirectUri(c.env), grant_type: 'authorization_code' }),
+    });
+    const tokens = await tokenRes.json<{ access_token?: string; refresh_token?: string; expires_in?: number }>();
+    if (!tokenRes.ok || !tokens.access_token) throw new Error('Google 인증에 실패했습니다.');
+    const userRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers: { Authorization: `Bearer ${tokens.access_token}` } });
+    const userInfo = await userRes.json<{ email?: string }>();
+    const expiry = new Date(Date.now() + (tokens.expires_in ?? 3600) * 1000).toISOString();
+    await c.env.DB.prepare(`INSERT INTO google_connections (user_id, access_token_encrypted, refresh_token_encrypted, token_expiry, google_email)
+      VALUES (?, ?, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET access_token_encrypted = excluded.access_token_encrypted,
+      refresh_token_encrypted = COALESCE(excluded.refresh_token_encrypted, google_connections.refresh_token_encrypted),
+      token_expiry = excluded.token_expiry, google_email = excluded.google_email, updated_at = CURRENT_TIMESTAMP`)
+      .bind(userId, await encryptGoogleToken(tokens.access_token, c.env.JWT_SECRET),
+        tokens.refresh_token ? await encryptGoogleToken(tokens.refresh_token, c.env.JWT_SECRET) : null,
+        expiry, userInfo.email ?? null).run();
+    return c.redirect(`${origin}/deals?google=connected`);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : 'Google OAuth 처리 실패');
+    return c.redirect(`${origin}/deals?google=error`);
+  }
+});
+
+app.delete('/api/integrations/google', async (c) => {
+  await c.env.DB.prepare('DELETE FROM google_connections WHERE user_id = ?').bind(getUser(c as AppContext).id).run();
+  return c.body(null, 204);
+});
+
+app.post('/api/deals/:id/calendar', async (c) => {
+  const user = getUser(c as AppContext);
+  const dealId = Number(c.req.param('id'));
+  const connection = await c.env.DB.prepare('SELECT access_token_encrypted, refresh_token_encrypted, token_expiry FROM google_connections WHERE user_id = ?')
+    .bind(user.id).first<GoogleConnection>();
+  if (!connection) return c.json({ message: 'Google Calendar가 연결되지 않았습니다.' }, 409);
+  const deal = await c.env.DB.prepare('SELECT client, deal_type, amount, draft_due_date, publish_due_date, payment_due_date FROM deals WHERE id = ? AND user_id = ?')
+    .bind(dealId, user.id).first<{ client: string | null; deal_type: string | null; amount: number | null; draft_due_date: string | null; publish_due_date: string | null; payment_due_date: string | null }>();
+  if (!deal) return c.json({ message: '거래를 찾을 수 없습니다.' }, 404);
+  if (!deal.draft_due_date && !deal.publish_due_date && !deal.payment_due_date)
+    return c.json({ message: '등록된 날짜가 없습니다. 거래 상세에서 날짜를 먼저 입력해주세요.' }, 400);
+  const accessToken = await getGoogleAccessToken(connection, c.env, async (encrypted, expiry) => {
+    await c.env.DB.prepare('UPDATE google_connections SET access_token_encrypted = ?, token_expiry = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?')
+      .bind(encrypted, expiry, user.id).run();
+  });
+  const clientName = deal.client ?? '거래처 미정';
+  const description = `Duepick 거래\n거래처: ${clientName}${deal.deal_type ? `\n유형: ${deal.deal_type}` : ''}${deal.amount != null ? `\n금액: ${deal.amount.toLocaleString()}원` : ''}`;
+  const createEvent = async (date: string, summary: string, colorId: string) => {
+    const end = new Date(date); end.setDate(end.getDate() + 1);
+    const res = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+      method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ summary, description, colorId, start: { date }, end: { date: end.toISOString().slice(0, 10) } }),
+    });
+    if (!res.ok) { const e = await res.json<{ error?: { message?: string } }>(); throw new Error(e.error?.message || 'Calendar 일정 생성 실패'); }
+  };
+  let count = 0;
+  if (deal.draft_due_date) { await createEvent(deal.draft_due_date, `[${clientName}] 초안 마감`, '5'); count++; }
+  if (deal.publish_due_date) { await createEvent(deal.publish_due_date, `[${clientName}] 게시 마감`, '6'); count++; }
+  if (deal.payment_due_date) { await createEvent(deal.payment_due_date, `[${clientName}] 입금 예정`, '2'); count++; }
+  await c.env.DB.prepare('UPDATE deals SET calendar_synced_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?').bind(dealId, user.id).run();
+  return c.json({ count });
 });
 
 app.post('/api/auth/signup', async (c) => {
