@@ -19,6 +19,8 @@ apiClient.interceptors.response.use(
       localStorage.removeItem('accessToken');
       window.location.href = '/login';
     }
+    const message = error.response?.data?.message;
+    if (message) return Promise.reject(new Error(message));
     return Promise.reject(error);
   }
 );

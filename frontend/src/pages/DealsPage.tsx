@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { deleteDeal, fetchDeals, updateDeal, updateDealStatus, type Deal, type DealDetailsInput, type DealStatus } from '../api/deals';
 import { connectNotion, disconnectNotion, exportDealToNotion, fetchNotionStatus, setupNotionWorkspace, type NotionStatus } from '../api/notion';
@@ -20,7 +20,8 @@ export default function DealsPage() {
   const [notionBusy, setNotionBusy] = useState<number | 'connect' | 'disconnect' | 'setup' | null>(null);
   const [google, setGoogle] = useState<GoogleStatus | null>(null);
   const [googleBusy, setGoogleBusy] = useState<number | 'connect' | 'disconnect' | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<ReactNode | null>(null);
+  const [expandedPipelineId, setExpandedPipelineId] = useState<number | null>(null);
 
   const load = () => fetchDeals().then(setDeals).catch(() => setError('거래 목록을 불러오지 못했습니다.'));
   useEffect(() => {
@@ -58,7 +59,7 @@ export default function DealsPage() {
       const result = await setupNotionWorkspace();
       setNotion({ ...notion, configured: true, rootPageUrl: result.rootPageUrl });
       setNotice('Duepick 홈과 거래 관리 데이터베이스를 만들었습니다.');
-    } catch { setError('Duepick Notion 공간을 만들지 못했습니다. 잠시 후 다시 시도해주세요.'); }
+    } catch (e) { setError(e instanceof Error ? e.message : 'Duepick Notion 공간을 만들지 못했습니다. 잠시 후 다시 시도해주세요.'); }
     finally { setNotionBusy(null); }
   };
 
@@ -80,7 +81,7 @@ export default function DealsPage() {
     try {
       const { count } = await syncDealToCalendar(id);
       setDeals((items) => items.map((item) => item.id === id ? { ...item, calendarSyncedAt: new Date().toISOString() } : item));
-      setNotice(`Google Calendar에 일정 ${count}개를 등록했습니다.`);
+      setNotice(<>Google Calendar에 일정 {count}개를 등록했습니다. <a href="https://calendar.google.com" target="_blank" rel="noreferrer" style={{ textDecoration: 'underline' }}>캘린더 열기 →</a></>);
     } catch (e) { setError(e instanceof Error ? e.message : 'Calendar 등록에 실패했습니다.'); }
     finally { setGoogleBusy(null); }
   };
@@ -91,7 +92,7 @@ export default function DealsPage() {
       const updated = await exportDealToNotion(id);
       setDeals((items) => items.map((item) => item.id === id ? updated : item));
       setNotice('확인된 거래를 Notion 페이지로 내보냈습니다.');
-    } catch { setError('Notion 내보내기에 실패했습니다. 연결 상태를 확인해주세요.'); }
+    } catch (e) { setError(e instanceof Error ? e.message : 'Notion 내보내기에 실패했습니다. 연결 상태를 확인해주세요.'); }
     finally { setNotionBusy(null); }
   };
 
@@ -159,15 +160,24 @@ export default function DealsPage() {
               {dealsByStatus[status].length === 0
                 ? <div className="pipeline-col-empty">없음</div>
                 : dealsByStatus[status].map((deal) => (
-                  <div key={deal.id} className="pipeline-card">
+                  <div key={deal.id} className={`pipeline-card${expandedPipelineId === deal.id ? ' pipeline-card-expanded' : ''}`} onClick={() => setExpandedPipelineId(expandedPipelineId === deal.id ? null : deal.id)}>
                     <div className="pipeline-card-client">{deal.client ?? '거래처 확인 필요'}</div>
                     {deal.amount != null && <div className="pipeline-card-amount">{deal.amount.toLocaleString()}원</div>}
                     {deal.dealType && <span className="pipeline-card-type">{deal.dealType}</span>}
                     {deal.publishDueDate && <div className="pipeline-card-date">게시 <strong>{deal.publishDueDate}</strong></div>}
                     {deal.paymentDueDate && <div className="pipeline-card-date">입금 <strong>{deal.paymentDueDate}</strong></div>}
-                    <select className="pipeline-card-select" value={deal.status} onChange={(e) => changeStatus(deal.id, e.target.value as DealStatus)}>
+                    <select className="pipeline-card-select" value={deal.status} onClick={(e) => e.stopPropagation()} onChange={(e) => changeStatus(deal.id, e.target.value as DealStatus)}>
                       {Object.entries(statusLabels).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                     </select>
+                    {expandedPipelineId === deal.id && (
+                      <div className="pipeline-card-actions" onClick={(e) => e.stopPropagation()}>
+                        {deal.notionPageUrl
+                          ? <a className="btn btn-secondary btn-sm" href={deal.notionPageUrl} target="_blank" rel="noreferrer">Notion에서 열기</a>
+                          : <button className="btn btn-secondary btn-sm" onClick={() => void sendToNotion(deal.id)} disabled={!notion?.configured || deal.status === 'REVIEW' || notionBusy !== null}>{notionBusy === deal.id ? '내보내는 중…' : 'Notion으로 보내기'}</button>}
+                        {google?.connected && <button className="btn btn-secondary btn-sm" onClick={() => void addToCalendar(deal.id)} disabled={(!deal.draftDueDate && !deal.publishDueDate && !deal.paymentDueDate) || googleBusy === deal.id} title={deal.calendarSyncedAt ? `마지막 등록: ${deal.calendarSyncedAt.slice(0, 10)}` : ''}>{googleBusy === deal.id ? '등록 중…' : deal.calendarSyncedAt ? '📅 재등록' : '📅 Calendar'}</button>}
+                        <button className="btn btn-secondary btn-sm" onClick={() => { startEditing(deal); setView('list'); }}>상세 수정</button>
+                      </div>
+                    )}
                   </div>
                 ))}
             </div>
