@@ -10,6 +10,7 @@ const splitLines = (value: string) => value.split('\n').map((item) => item.trim(
 
 export default function DealsPage() {
   const [deals, setDeals] = useState<Deal[]>([]);
+  const [view, setView] = useState<'pipeline' | 'list'>('pipeline');
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [draft, setDraft] = useState<DealDetailsInput | null>(null);
@@ -94,10 +95,16 @@ export default function DealsPage() {
 
   const total = deals.filter((deal) => deal.status !== 'REVIEW').reduce((sum, deal) => sum + (deal.amount ?? 0), 0);
   const paid = deals.filter((deal) => deal.status === 'PAID').reduce((sum, deal) => sum + (deal.amount ?? 0), 0);
+  const statusOrder: DealStatus[] = ['REVIEW', 'CONFIRMED', 'IN_PROGRESS', 'COMPLETED', 'PAID'];
+  const colColors: Record<DealStatus, { bg: string; color: string }> = {
+    REVIEW: { bg: '#fff4d8', color: '#8a4b06' }, CONFIRMED: { bg: '#eaf1ff', color: '#3157a4' },
+    IN_PROGRESS: { bg: '#f0eaff', color: '#5b36a4' }, COMPLETED: { bg: '#dff7ef', color: '#0d7556' }, PAID: { bg: '#edf0f5', color: '#596174' },
+  };
+  const dealsByStatus = statusOrder.reduce<Record<DealStatus, Deal[]>>((acc, s) => ({ ...acc, [s]: deals.filter((d) => d.status === s) }), {} as Record<DealStatus, Deal[]>);
 
   return (
     <>
-      <header className="page-header"><div><p className="eyebrow">DEAL PIPELINE</p><h1 className="page-title">거래 관리</h1><p className="page-description">제안부터 입금까지 거래의 현재 위치와 중요한 조건을 한눈에 확인하세요.</p></div><div className="page-actions"><Link className="btn btn-primary" to="/proposals">＋ 새 제안 분석</Link></div></header>
+      <header className="page-header"><div><p className="eyebrow">DEAL PIPELINE</p><h1 className="page-title">거래 관리</h1><p className="page-description">제안부터 입금까지 거래의 현재 위치와 중요한 조건을 한눈에 확인하세요.</p></div><div className="page-actions"><div className="view-toggle"><button className={`view-toggle-btn${view === 'pipeline' ? ' active' : ''}`} onClick={() => setView('pipeline')}>파이프라인</button><button className={`view-toggle-btn${view === 'list' ? ' active' : ''}`} onClick={() => setView('list')}>목록</button></div><Link className="btn btn-primary" to="/proposals">＋ 새 제안 분석</Link></div></header>
       <section className="grid-3" style={{ marginBottom: 24 }}><div className="card metric-card"><div className="metric-label">전체 거래</div><div className="metric-value">{deals.length}건</div><div className="metric-note">확인 대기 포함</div></div><div className="card metric-card"><div className="metric-label">확정 거래 금액</div><div className="metric-value">{total.toLocaleString()}원</div><div className="metric-note">확인 완료된 거래</div></div><div className="card metric-card"><div className="metric-label">입금 완료</div><div className="metric-value">{paid.toLocaleString()}원</div><div className="metric-note">실제 수령 기준</div></div></section>
       <section className="card integration-card">
         <div><p className="eyebrow">NOTION EXPORT</p><h2 className="card-title">Notion 연결</h2><p className="card-copy">사용자가 확인한 거래만 선택해서 개인 Notion 페이지로 내보냅니다.</p></div>
@@ -106,7 +113,29 @@ export default function DealsPage() {
       {error && <div className="alert alert-error">{error}</div>}
       {notice && <div className="alert alert-info">{notice}</div>}
       {!deals.length && <div className="empty-state"><div className="empty-icon">▦</div><h3>아직 저장된 거래가 없어요</h3><p>받은 메일을 확인하거나 제안 원문을 직접 분석해 첫 거래를 만들어보세요.</p><Link className="btn btn-primary" style={{ marginTop: 18 }} to="/inbox">받은 제안 보기</Link></div>}
-      <div className="stack">
+      {view === 'pipeline' && deals.length > 0 && (
+        <div className="pipeline">
+          {statusOrder.map((status) => (
+            <div key={status} className="pipeline-col">
+              <div className="pipeline-col-header" style={{ background: colColors[status].bg, color: colColors[status].color }}>
+                <span>{statusLabels[status]}</span><span className="pipeline-col-count">{dealsByStatus[status].length}</span>
+              </div>
+              {dealsByStatus[status].length === 0
+                ? <div className="pipeline-col-empty">없음</div>
+                : dealsByStatus[status].map((deal) => (
+                  <div key={deal.id} className="pipeline-card">
+                    <div className="pipeline-card-client">{deal.client ?? '거래처 확인 필요'}</div>
+                    {deal.amount != null && <div className="pipeline-card-amount">{deal.amount.toLocaleString()}원</div>}
+                    {deal.dealType && <span className="pipeline-card-type">{deal.dealType}</span>}
+                    {deal.publishDueDate && <div className="pipeline-card-date">게시 <strong>{deal.publishDueDate}</strong></div>}
+                    {deal.paymentDueDate && <div className="pipeline-card-date">입금 <strong>{deal.paymentDueDate}</strong></div>}
+                  </div>
+                ))}
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="stack" style={{ display: view === 'list' ? 'grid' : 'none' }}>
         {deals.map((deal) => <article key={deal.id} className="card deal-card">
           <div className="deal-top"><div><div className="deal-client">{deal.client ?? '거래처 확인 필요'}</div><div className="deal-type">{deal.dealType ?? '거래 유형 미정'}</div></div><div className="deal-amount">{deal.amount == null ? '금액 확인 필요' : `${deal.amount.toLocaleString()}원`}</div></div>
           <div className="deal-deliverables">{deal.deliverables.length ? deal.deliverables.map((item) => <span className="tag" key={item}>{item}</span>) : <span className="tag">작업 범위 확인 필요</span>}</div>
